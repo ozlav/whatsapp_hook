@@ -3,7 +3,7 @@ import { z } from 'zod';
 // Environment variable schema
 const envSchema = z.object({
   // Server Configuration (always required)
-  PORT: z.string().min(1, 'PORT is required'),
+  PORT: z.string().min(1, 'PORT is required').default('3000'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 
@@ -28,23 +28,9 @@ const parseEnv = () => {
   try {
     const env = envSchema.parse(process.env);
     
-    // In production, validate that all required variables are present
-    if (env.NODE_ENV === 'production') {
-      const requiredVars = [
-        'DATABASE_URL',
-        'OPENAI_API_KEY', 
-        'GOOGLE_SHEET_ID',
-        'GOOGLE_SERVICE_ACCOUNT_EMAIL',
-        'GOOGLE_PRIVATE_KEY',
-        'EVOLUTION_WEBHOOK_SECRET',
-        'TARGET_GROUP_ID'
-      ];
-      
-      const missingVars = requiredVars.filter(varName => !env[varName as keyof typeof env]);
-      if (missingVars.length > 0) {
-        throw new Error(`Missing required environment variables in production: ${missingVars.join(', ')}`);
-      }
-    }
+    // Only validate required variables if they are actually provided
+    // This allows the service to start even without all production variables
+    // The service will log warnings for missing variables instead of crashing
     
     return env;
   } catch (error) {

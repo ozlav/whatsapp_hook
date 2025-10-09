@@ -8,8 +8,19 @@ import { env } from './lib/env';
 // Load environment variables
 dotenv.config();
 
+// Log startup information
+logger.info('Starting WhatsApp webhook server...', {
+  nodeEnv: process.env['NODE_ENV'],
+  port: process.env['PORT'],
+  hasDatabaseUrl: !!process.env['DATABASE_URL'],
+  hasOpenaiKey: !!process.env['OPENAI_API_KEY'],
+  hasGoogleSheetId: !!process.env['GOOGLE_SHEET_ID'],
+  hasWebhookSecret: !!process.env['EVOLUTION_WEBHOOK_SECRET'],
+  hasTargetGroupId: !!process.env['TARGET_GROUP_ID']
+});
+
 const app = express();
-const PORT = parseInt(env.PORT, 10);
+const PORT = parseInt(env.PORT || process.env['PORT'] || '3000', 10);
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
