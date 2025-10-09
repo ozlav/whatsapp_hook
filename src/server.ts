@@ -1,13 +1,11 @@
 import express from 'express';
-import dotenv from 'dotenv';
 import { healthRouter } from './routes/health';
 import { webhookRouter } from './routes/webhook';
 import { logger } from './lib/logger';
 import { env } from './lib/env';
 import { testDatabaseConnection, disconnectDatabase } from './db/client';
 
-// Load environment variables
-dotenv.config();
+// Environment variables are loaded in env.ts
 
 // Log startup information
 logger.info('Starting WhatsApp webhook server...', {

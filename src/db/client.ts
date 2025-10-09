@@ -1,17 +1,18 @@
 import { PrismaClient } from '@prisma/client';
-import { env } from '../lib/env.js';
-import { logger } from '../lib/logger.js';
+import { env } from '../lib/env';
+import { logger } from '../lib/logger';
 
 // Global Prisma client instance
 let prisma: PrismaClient | null = null;
 
 // Get or create Prisma client instance
-export const getPrismaClient = (): PrismaClient => {
+export const getPrismaClient = (): PrismaClient | null => {
   if (!prisma) {
     // Validate DATABASE_URL is available
     const databaseUrl = env.DATABASE_URL;
     if (!databaseUrl) {
-      throw new Error('DATABASE_URL is required but not set');
+      logger.warn('DATABASE_URL is not set, database operations will be skipped');
+      return null;
     }
 
     prisma = new PrismaClient({
@@ -31,6 +32,10 @@ export const getPrismaClient = (): PrismaClient => {
 export const testDatabaseConnection = async (): Promise<boolean> => {
   try {
     const client = getPrismaClient();
+    if (!client) {
+      logger.warn('Database client not available');
+      return false;
+    }
     await client.$queryRaw`SELECT 1`;
     logger.info('Database connection successful');
     return true;

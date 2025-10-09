@@ -179,3 +179,7 @@ dist/
 env.*
 !.env.example
 !src/lib/env.ts
+
+# Docker
+docker-compose.yml
+docker-compose.override.yml
