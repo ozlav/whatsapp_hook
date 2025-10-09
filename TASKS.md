@@ -21,7 +21,7 @@ WhatsApp webhook processing system that:
 ## P0: Bootability & Core Infrastructure + Testing
 
 ### TASK 1.1: Initialize Express Service + Tests
-- **Status**: planned
+- **Status**: completed
 - **Estimate**: M
 - **Labels**: [backend, infra, testing]
 - **Rationale**: Foundation for webhook endpoints with Railway-compatible testing
@@ -55,7 +55,7 @@ WhatsApp webhook processing system that:
   ```
 
 ### TASK 1.2: Environment Validation + Tests
-- **Status**: planned
+- **Status**: completed
 - **Estimate**: M
 - **Labels**: [infra, backend, testing]
 - **Rationale**: Fail-fast on missing configs with comprehensive validation testing
@@ -85,7 +85,7 @@ WhatsApp webhook processing system that:
   ```
 
 ### TASK 2.1: Create Webhook Endpoint + Tests
-- **Status**: planned
+- **Status**: completed
 - **Estimate**: L
 - **Labels**: [backend, webhook, testing]
 - **Rationale**: Receive EvolutionAPI WhatsApp messages with comprehensive testing
@@ -120,7 +120,7 @@ WhatsApp webhook processing system that:
 - **Risk/Unknowns**: EvolutionAPI webhook format unknown; need to check docs for payload structure and signature method
 
 ### TASK 1.3: Railway CI/CD Test Pipeline
-- **Status**: planned
+- **Status**: completed
 - **Estimate**: M
 - **Labels**: [infra, testing, deployment]
 - **Rationale**: Ensure all tests pass on Railway deployment
@@ -149,7 +149,7 @@ WhatsApp webhook processing system that:
   ```
 
 ### TASK 1.4: Integration Test Suite
-- **Status**: planned
+- **Status**: completed
 - **Estimate**: M
 - **Labels**: [testing, integration]
 - **Rationale**: End-to-end testing of P0 functionality on Railway
