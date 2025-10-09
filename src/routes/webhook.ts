@@ -65,9 +65,12 @@ webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
     // Save webhook payload to Google Sheets
     try {
       const timestamp = new Date().toISOString();
-      const messageId = req.body.id || 'unknown';
-      const remoteJid = req.body.key?.remoteJid || 'unknown';
-      const messageText = req.body.message?.conversation || req.body.message?.extendedTextMessage?.text || 'no text';
+      const messageId = req.body.data?.key?.id || 'unknown';
+      const remoteJid = req.body.data?.key?.remoteJid || 'unknown';
+      const messageText = req.body.data?.message?.conversation || 
+                        req.body.data?.message?.extendedTextMessage?.text || 
+                        req.body.data?.message?.imageMessage?.caption ||
+                        'no text';
       
       // Prepare data for Google Sheets
       const sheetData = [
@@ -96,7 +99,7 @@ webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
     // TODO: Add message processing pipeline
     
     // For now, just acknowledge receipt
-    logger.info({ requestId, messageId: req.body.id || 'unknown' }, 'Webhook processed successfully');
+    logger.info({ requestId, messageId: req.body.data?.key?.id || 'unknown' }, 'Webhook processed successfully');
     
     res.status(200).json({
       ok: true,
