@@ -1,0 +1,81 @@
+import { Router } from 'express';
+import { logger } from '../lib/logger';
+
+const webhookRouter = Router();
+
+// WhatsApp webhook endpoint
+webhookRouter.post('/whatsapp', (req, res): void => {
+  const requestId = req.headers['x-request-id'] as string;
+  
+  try {
+    // Check if body parsing failed (malformed JSON)
+    if (req.body === undefined || req.body === null) {
+      logger.warn({ requestId }, 'Webhook received malformed JSON');
+      res.status(400).json({
+        error: 'Bad Request',
+        message: 'Invalid JSON in request body',
+        requestId
+      });
+      return;
+    }
+
+    logger.info({ requestId, body: req.body }, 'WhatsApp webhook received');
+    
+    // Basic validation - check if body exists and has content
+    if (!req.body || Object.keys(req.body).length === 0) {
+      logger.warn({ requestId }, 'Webhook received empty body');
+      res.status(400).json({
+        error: 'Bad Request',
+        message: 'Request body is required',
+        requestId
+      });
+      return;
+    }
+
+    // TODO: Add EvolutionAPI signature verification
+    // TODO: Add group ID filtering (remotejid)
+    // TODO: Add message processing pipeline
+    
+    // For now, just acknowledge receipt
+    logger.info({ requestId, messageId: req.body.id || 'unknown' }, 'Webhook processed successfully');
+    
+    res.status(200).json({
+      ok: true,
+      message: 'Webhook received and queued for processing',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error({ 
+      requestId, 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Webhook processing failed');
+    
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to process webhook',
+      requestId
+    });
+  }
+});
+
+// Test endpoint for webhook functionality
+webhookRouter.get('/test', (req, res): void => {
+  const requestId = req.headers['x-request-id'] as string;
+  
+  logger.info({ requestId }, 'Webhook test endpoint accessed');
+  
+  res.json({
+    ok: true,
+    message: 'Webhook endpoint is working',
+    requestId,
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      webhook: 'POST /webhook/whatsapp',
+      test: 'GET /webhook/test'
+    }
+  });
+});
+
+export { webhookRouter };
