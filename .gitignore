@@ -178,3 +178,4 @@ dist/
 # Environment files
 env.*
 !.env.example
+!src/lib/env.ts
