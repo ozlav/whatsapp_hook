@@ -4,6 +4,7 @@ import { healthRouter } from './routes/health';
 import { webhookRouter } from './routes/webhook';
 import { logger } from './lib/logger';
 import { env } from './lib/env';
+import { testDatabaseConnection, disconnectDatabase } from './db/client';
 
 // Load environment variables
 dotenv.config();
@@ -85,32 +86,55 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
 // Start server only if not in test environment
 let server: any = null;
 if (env.NODE_ENV !== 'test') {
-  server = app.listen(PORT, () => {
-    logger.info({ port: PORT, env: env.NODE_ENV }, 'Server started');
-  });
+  // Test database connection before starting server
+  const startServer = async () => {
+    try {
+      if (env.DATABASE_URL) {
+        const dbConnected = await testDatabaseConnection();
+        if (!dbConnected) {
+          logger.warn('Database connection failed, but continuing without database');
+        }
+      } else {
+        logger.info('No DATABASE_URL provided, running without database');
+      }
+      
+      server = app.listen(PORT, () => {
+        logger.info({ port: PORT, env: env.NODE_ENV }, 'Server started');
+      });
+    } catch (error) {
+      logger.error({ error: error instanceof Error ? error.message : 'Unknown error' }, 'Failed to start server');
+      process.exit(1);
+    }
+  };
+  
+  startServer();
 }
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully');
   if (server) {
-    server.close(() => {
+    server.close(async () => {
+      await disconnectDatabase();
       logger.info('Server closed');
       process.exit(0);
     });
   } else {
+    await disconnectDatabase();
     process.exit(0);
   }
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully');
   if (server) {
-    server.close(() => {
+    server.close(async () => {
+      await disconnectDatabase();
       logger.info('Server closed');
       process.exit(0);
     });
   } else {
+    await disconnectDatabase();
     process.exit(0);
   }
 });

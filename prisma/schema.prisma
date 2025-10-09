@@ -1,0 +1,37 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["web_server_webhook"]
+}
+
+// Webhook Log - stores raw webhook calls for analysis
+model WebhookLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  
+  // Raw webhook data
+  rawPayload Json     // complete webhook payload as received
+  headers    Json?    // HTTP headers from the request
+  method     String   // HTTP method (POST, GET, etc.)
+  url        String   // webhook endpoint URL
+  
+  // Request metadata
+  userAgent  String?
+  ipAddress  String?
+  requestId  String?  // custom request ID if provided
+  
+  // Processing status
+  status     String   @default("received") // received, processed, failed
+  errorMessage String?
+  
+  @@map("webhook_logs")
+  @@schema("web_server_webhook")
+}

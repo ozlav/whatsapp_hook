@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { logger } from '../lib/logger';
+import { getPrismaClient } from '../db/client';
 
 const webhookRouter = Router();
 
 // WhatsApp webhook endpoint
-webhookRouter.post('/whatsapp', (req, res): void => {
+webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
   const requestId = req.headers['x-request-id'] as string;
   
   try {
@@ -30,6 +31,30 @@ webhookRouter.post('/whatsapp', (req, res): void => {
         requestId
       });
       return;
+    }
+
+    // Log webhook to database
+    try {
+      const prisma = getPrismaClient();
+      await prisma.webhookLog.create({
+        data: {
+          rawPayload: req.body,
+          headers: req.headers as any,
+          method: req.method,
+          url: req.originalUrl,
+          userAgent: req.get('User-Agent') || null,
+          ipAddress: req.ip || req.connection.remoteAddress || null,
+          requestId: requestId || null,
+          status: 'received'
+        }
+      });
+      logger.info({ requestId }, 'Webhook logged to database');
+    } catch (dbError) {
+      logger.error({ 
+        requestId, 
+        error: dbError instanceof Error ? dbError.message : 'Database error' 
+      }, 'Failed to log webhook to database');
+      // Continue processing even if database logging fails
     }
 
     // TODO: Add EvolutionAPI signature verification
@@ -73,9 +98,81 @@ webhookRouter.get('/test', (req, res): void => {
     timestamp: new Date().toISOString(),
     endpoints: {
       webhook: 'POST /webhook/whatsapp',
-      test: 'GET /webhook/test'
+      test: 'GET /webhook/test',
+      logs: 'GET /webhook/logs'
     }
   });
+});
+
+// View logged webhooks
+webhookRouter.get('/logs', async (req, res): Promise<void> => {
+  const requestId = req.headers['x-request-id'] as string;
+  
+  try {
+    const prisma = getPrismaClient();
+    
+    // Get query parameters for pagination and filtering
+    const page = parseInt(req.query['page'] as string) || 1;
+    const limit = Math.min(parseInt(req.query['limit'] as string) || 10, 100); // Max 100 per page
+    const status = req.query['status'] as string;
+    
+    const skip = (page - 1) * limit;
+    
+    // Build where clause
+    const where: any = {};
+    if (status) {
+      where.status = status;
+    }
+    
+    // Get webhook logs with pagination
+    const [logs, total] = await Promise.all([
+      prisma.webhookLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          createdAt: true,
+          method: true,
+          url: true,
+          userAgent: true,
+          ipAddress: true,
+          requestId: true,
+          status: true,
+          errorMessage: true,
+          rawPayload: true
+        }
+      }),
+      prisma.webhookLog.count({ where })
+    ]);
+    
+    logger.info({ requestId, page, limit, total }, 'Webhook logs retrieved');
+    
+    res.json({
+      ok: true,
+      data: logs,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      },
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error({ 
+      requestId, 
+      error: error instanceof Error ? error.message : 'Database error' 
+    }, 'Failed to retrieve webhook logs');
+    
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to retrieve webhook logs',
+      requestId
+    });
+  }
 });
 
 export { webhookRouter };

@@ -7,7 +7,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 
-  // Database (optional - Railway will provide this)
+  // Database (required for production, optional for development)
   DATABASE_URL: z.string().optional(),
 
   // OpenAI Configuration (optional - will be validated when used)
