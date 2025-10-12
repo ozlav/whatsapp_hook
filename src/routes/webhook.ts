@@ -63,27 +63,9 @@ webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
       // Continue processing even if database logging fails
     }
 
-    // Process WhatsApp message and add to deposit sheet
-    try {
-      const messageId = req.body.data?.key?.id || 'unknown';
-      
-      // Try to process as work order first
-      const processed = await processWhatsAppMessage(req.body);
-      
-      if (processed) {
-        logger.info({ requestId, messageId }, 'Message processed as work order and added to deposit sheet');
-      } else {
-        // If not a work order, add as basic message log
-        await addMessageToDepositSheet(req.body);
-        logger.info({ requestId, messageId }, 'Message added to deposit sheet as basic log');
-      }
-    } catch (sheetsError) {
-      logger.error({ 
-        requestId, 
-        error: sheetsError instanceof Error ? sheetsError.message : 'Sheets error' 
-      }, 'Failed to process message for deposit sheet');
-      // Continue processing even if Sheets save fails
-    }
+    // Note: Message processing is handled by /webhook/whatsapp/messages-upsert endpoint
+    // This endpoint only logs to database to avoid duplicate processing
+    logger.info({ requestId }, 'Message logged to database (processing handled by messages-upsert endpoint)');
 
     // TODO: Add EvolutionAPI signature verification
     // TODO: Add group ID filtering (remotejid)
