@@ -10,13 +10,13 @@ import { env } from '../lib/env';
 
 // Constants
 const SHEET_NAMES = {
-  WORK_ORDERS: 'deposit', // Using your existing deposit sheet
+  WORK_ORDERS: 'Deposite', // Using your existing Deposite sheet
   AUDIT_LOG: 'AuditLog'
 } as const;
 
 const RANGES = {
-  WORK_ORDERS_DATA: 'deposit!A:N', // 14 columns in your deposit sheet (added Job ID)
-  WORK_ORDERS_HEADERS: 'deposit!A1:N1',
+  WORK_ORDERS_DATA: 'Deposite!A:N', // 14 columns in your Deposite sheet (added Job ID)
+  WORK_ORDERS_HEADERS: 'Deposite!A1:N1',
   AUDIT_LOG_DATA: 'AuditLog!A:F',
   AUDIT_LOG_HEADERS: 'AuditLog!A1:F1'
 } as const;
@@ -335,7 +335,7 @@ export async function initializeSheets(): Promise<void> {
 
 /**
  * Prepare order data for Google Sheets format
- * Matches your deposit sheet structure:
+ * Matches your Deposite sheet structure:
  * Full message | Time sent | from | group id | Job ID | customer name | address | start | end date | deposit | total price | sort of payment | notes | job status
  */
 function prepareOrderDataForSheet(orderData: OrderData, fullMessage?: string): string[][] {
@@ -431,7 +431,7 @@ async function createSheetWithHeaders(
 }
 
 /**
- * Get deposit sheet headers (matching your existing structure)
+ * Get Deposite sheet headers (matching your existing structure)
  */
 function getWorkOrdersHeaders(): string[] {
   return [
