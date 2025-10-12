@@ -113,6 +113,106 @@ webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
   }
 });
 
+// WhatsApp messages-upsert endpoint (Evolution API specific)
+webhookRouter.post('/whatsapp/messages-upsert', async (req, res): Promise<void> => {
+  const requestId = req.headers['x-request-id'] as string;
+  
+  try {
+    // Check if body parsing failed (malformed JSON)
+    if (req.body === undefined || req.body === null) {
+      logger.warn({ requestId }, 'Messages-upsert webhook received malformed JSON');
+      res.status(400).json({
+        error: 'Bad Request',
+        message: 'Invalid JSON in request body',
+        requestId
+      });
+      return;
+    }
+
+    logger.info({ requestId, body: req.body }, 'WhatsApp messages-upsert webhook received');
+    
+    // Basic validation - check if body exists and has content
+    if (!req.body || Object.keys(req.body).length === 0) {
+      logger.warn({ requestId }, 'Messages-upsert webhook received empty body');
+      res.status(400).json({
+        error: 'Bad Request',
+        message: 'Empty request body',
+        requestId
+      });
+      return;
+    }
+
+    // Log webhook to database
+    try {
+      const prisma = getPrismaClient();
+      if (prisma) {
+        await prisma.webhookLog.create({
+          data: {
+            rawPayload: JSON.stringify(req.body),
+            headers: JSON.stringify(req.headers),
+            method: req.method,
+            url: req.url,
+            userAgent: req.headers['user-agent'] || 'unknown',
+            ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
+            requestId: requestId || 'no-request-id',
+            status: 'received'
+          }
+        });
+        logger.info({ requestId }, 'Messages-upsert webhook logged to database');
+      }
+    } catch (dbError) {
+      logger.error({ 
+        requestId, 
+        error: dbError instanceof Error ? dbError.message : 'Database error' 
+      }, 'Failed to log messages-upsert webhook to database');
+      // Continue processing even if database logging fails
+    }
+
+    // Process WhatsApp message and add to deposit sheet
+    try {
+      const messageId = req.body.data?.key?.id || 'unknown';
+      
+      // Try to process as work order first
+      const processed = await processWhatsAppMessage(req.body);
+      
+      if (processed) {
+        logger.info({ requestId, messageId }, 'Messages-upsert processed as work order and added to deposit sheet');
+      } else {
+        // If not a work order, add as basic message log
+        await addMessageToDepositSheet(req.body);
+        logger.info({ requestId, messageId }, 'Messages-upsert added to deposit sheet as basic log');
+      }
+    } catch (sheetsError) {
+      logger.error({ 
+        requestId, 
+        error: sheetsError instanceof Error ? sheetsError.message : 'Sheets error' 
+      }, 'Failed to process messages-upsert for deposit sheet');
+      // Continue processing even if Sheets save fails
+    }
+
+    // Send success response
+    res.json({
+      ok: true,
+      message: 'Messages-upsert webhook processed successfully',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info({ requestId }, 'Messages-upsert webhook processed successfully');
+  } catch (error) {
+    logger.error({ 
+      requestId, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }, 'Failed to process messages-upsert webhook');
+    
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to process messages-upsert webhook',
+      requestId
+    });
+  }
+});
+
 // Test endpoint for webhook functionality
 webhookRouter.get('/test', (req, res): void => {
   const requestId = req.headers['x-request-id'] as string;
@@ -126,6 +226,7 @@ webhookRouter.get('/test', (req, res): void => {
     timestamp: new Date().toISOString(),
     endpoints: {
       webhook: 'POST /webhook/whatsapp',
+      messagesUpsert: 'POST /webhook/whatsapp/messages-upsert',
       test: 'GET /webhook/test',
       logs: 'GET /webhook/logs',
       sheetsTest: 'GET /webhook/sheets-test'
