@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { logger } from '../lib/logger';
 import { getPrismaClient } from '../db/client';
-import { appendToSheet, testSheetsConnection } from '../sheets/client';
+import { testSheetsConnection } from '../sheets/client';
+import { processWhatsAppMessage, addMessageToDepositSheet } from '../lib/whatsappProcessor';
 
 const webhookRouter = Router();
 
@@ -62,35 +63,25 @@ webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
       // Continue processing even if database logging fails
     }
 
-    // Save webhook payload to Google Sheets
+    // Process WhatsApp message and add to deposit sheet
     try {
-      const timestamp = new Date().toISOString();
       const messageId = req.body.data?.key?.id || 'unknown';
-      const remoteJid = req.body.data?.key?.remoteJid || 'unknown';
-      const messageText = req.body.data?.message?.conversation || 
-                        req.body.data?.message?.extendedTextMessage?.text || 
-                        req.body.data?.message?.imageMessage?.caption ||
-                        'no text';
       
-      // Prepare data for Google Sheets
-      const sheetData = [
-        [
-          timestamp,
-          requestId || 'no-request-id',
-          messageId,
-          remoteJid,
-          messageText,
-          JSON.stringify(req.body) // Full payload as JSON string
-        ]
-      ];
-
-      await appendToSheet('logs!A:F', sheetData);
-      logger.info({ requestId, messageId }, 'Webhook payload saved to Google Sheets');
+      // Try to process as work order first
+      const processed = await processWhatsAppMessage(req.body);
+      
+      if (processed) {
+        logger.info({ requestId, messageId }, 'Message processed as work order and added to deposit sheet');
+      } else {
+        // If not a work order, add as basic message log
+        await addMessageToDepositSheet(req.body);
+        logger.info({ requestId, messageId }, 'Message added to deposit sheet as basic log');
+      }
     } catch (sheetsError) {
       logger.error({ 
         requestId, 
         error: sheetsError instanceof Error ? sheetsError.message : 'Sheets error' 
-      }, 'Failed to save webhook payload to Google Sheets');
+      }, 'Failed to process message for deposit sheet');
       // Continue processing even if Sheets save fails
     }
 

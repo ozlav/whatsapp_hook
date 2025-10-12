@@ -184,9 +184,9 @@ describe('Google Sheets Operations', () => {
       it('should return 1-based row number for existing work order', async () => {
         const { getSheetData } = require('../src/sheets/client');
         getSheetData.mockResolvedValueOnce([
-          ['Work ID', 'Customer Name', 'Address', 'Phone'], // Header
-          ['WO-12345', 'John Doe', '123 Main St', '555-123-4567'],
-          ['WO-67890', 'Jane Smith', '456 Oak Ave', '555-987-6543']
+          ['Full message', 'Time sent', 'from', 'group id', 'Job ID', 'customer name', 'address', 'start', 'end date', 'deposit', 'total price', 'sort of payment', 'notes', 'job status'], // Header
+          ['Message 1', '2024-01-01', 'User1', 'group1', 'WO-12345', 'John Doe', '123 Main St', '2024-01-01', '2024-01-02', '100', '500', 'cash', 'Notes 1', 'new'],
+          ['Message 2', '2024-01-01', 'User2', 'group1', 'WO-67890', 'Jane Smith', '456 Oak Ave', '2024-01-01', '2024-01-02', '200', '800', 'card', 'Notes 2', 'in_progress']
         ]);
 
         const result = await findSheetRowByWorkId('WO-12345');
@@ -198,8 +198,8 @@ describe('Google Sheets Operations', () => {
       it('should return null when work order not found in data', async () => {
         const { getSheetData } = require('../src/sheets/client');
         getSheetData.mockResolvedValueOnce([
-          ['Work ID', 'Customer Name', 'Address', 'Phone'], // Header
-          ['WO-67890', 'Jane Smith', '456 Oak Ave', '555-987-6543']
+          ['Full message', 'Time sent', 'from', 'group id', 'Job ID', 'customer name', 'address', 'start', 'end date', 'deposit', 'total price', 'sort of payment', 'notes', 'job status'], // Header
+          ['Message 2', '2024-01-01', 'User2', 'group1', 'WO-67890', 'Jane Smith', '456 Oak Ave', '2024-01-01', '2024-01-02', '200', '800', 'card', 'Notes 2', 'in_progress']
         ]);
 
         const result = await findSheetRowByWorkId('WO-12345');

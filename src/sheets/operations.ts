@@ -10,13 +10,13 @@ import { env } from '../lib/env';
 
 // Constants
 const SHEET_NAMES = {
-  WORK_ORDERS: 'WorkOrders',
+  WORK_ORDERS: 'deposit', // Using your existing deposit sheet
   AUDIT_LOG: 'AuditLog'
 } as const;
 
 const RANGES = {
-  WORK_ORDERS_DATA: 'WorkOrders!A:P',
-  WORK_ORDERS_HEADERS: 'WorkOrders!A1:P1',
+  WORK_ORDERS_DATA: 'deposit!A:N', // 14 columns in your deposit sheet (added Job ID)
+  WORK_ORDERS_HEADERS: 'deposit!A1:N1',
   AUDIT_LOG_DATA: 'AuditLog!A:F',
   AUDIT_LOG_HEADERS: 'AuditLog!A1:F1'
 } as const;
@@ -53,23 +53,24 @@ export interface OrderData {
 
 /**
  * Column mapping for Google Sheets updates
+ * Maps to deposit sheet columns: A=Full message, B=Time sent, C=from, D=group id, E=Job ID, F=customer name, etc.
  */
 const COLUMN_MAP: Record<keyof Omit<OrderData, 'created_at'>, string> = {
-  work_id: 'A',
-  customer_name: 'B',
-  address: 'C',
-  phone: 'D',
-  job_description: 'E',
-  total_price: 'F',
-  deposit: 'G',
-  job_status: 'H',
-  start_date_time: 'I',
-  end_date_time: 'J',
-  sort_of_payment: 'K',
-  notes: 'L',
-  created_by: 'O',
-  updated_at: 'N',
-  updated_by: 'P'
+  work_id: 'E', // Job ID column
+  customer_name: 'F', // customer name
+  address: 'G', // address
+  phone: 'H', // Not in your sheet, but keeping for compatibility
+  job_description: 'A', // Full message (closest match)
+  total_price: 'K', // total price
+  deposit: 'J', // deposit
+  job_status: 'N', // job status
+  start_date_time: 'H', // start
+  end_date_time: 'I', // end date
+  sort_of_payment: 'L', // sort of payment
+  notes: 'M', // notes
+  created_by: 'C', // from
+  updated_at: 'B', // Time sent (closest match)
+  updated_by: 'C' // from
 } as const;
 
 /**
@@ -88,11 +89,11 @@ export interface ChangeAnalysis {
  * @returns Row number where the order was created (timestamp-based identifier)
  * @throws {Error} When Google Sheets API fails
  */
-export async function createNewOrder(orderData: OrderData): Promise<number> {
+export async function createNewOrder(orderData: OrderData, fullMessage?: string): Promise<number> {
   try {
     logger.info('Creating new work order', { workId: orderData.work_id });
     
-    const sheetData = prepareOrderDataForSheet(orderData);
+    const sheetData = prepareOrderDataForSheet(orderData, fullMessage);
 
     // Append to main sheet
     await appendToSheet(RANGES.WORK_ORDERS_DATA, sheetData);
@@ -134,10 +135,10 @@ export async function findSheetRowByWorkId(workId: string): Promise<number | nul
       return null;
     }
 
-    // Search for the work_id in the first column (column A)
+    // Search for the work_id in the Job ID column (column E, index 4)
     for (let i = HEADER_ROW_INDEX; i < data.length; i++) {
       const row = data[i];
-      if (row && row.length > 0 && row[0] === workId) {
+      if (row && row.length > 4 && row[4] === workId) { // Job ID is in column E (index 4)
         const rowNumber = i + 1; // Convert to 1-based row number
         logger.info('Found work order', { workId, rowNumber });
         return rowNumber;
@@ -334,25 +335,25 @@ export async function initializeSheets(): Promise<void> {
 
 /**
  * Prepare order data for Google Sheets format
+ * Matches your deposit sheet structure:
+ * Full message | Time sent | from | group id | Job ID | customer name | address | start | end date | deposit | total price | sort of payment | notes | job status
  */
-function prepareOrderDataForSheet(orderData: OrderData): string[][] {
+function prepareOrderDataForSheet(orderData: OrderData, fullMessage?: string): string[][] {
   return [[
-    orderData.work_id,
-    orderData.customer_name,
-    orderData.address,
-    orderData.phone,
-    orderData.job_description || '',
-    String(orderData.total_price || ''),
-    String(orderData.deposit || ''),
-    orderData.job_status || DEFAULT_JOB_STATUS,
-    orderData.start_date_time || '',
-    orderData.end_date_time || '',
-    orderData.sort_of_payment || '',
-    orderData.notes || '',
-    orderData.created_at,
-    orderData.updated_at,
-    orderData.created_by,
-    orderData.updated_by
+    fullMessage || '', // Full message
+    orderData.created_at, // Time sent
+    orderData.created_by, // from
+    '120363418663151479@g.us', // group id (you can make this configurable)
+    orderData.work_id, // Job ID
+    orderData.customer_name, // customer name
+    orderData.address, // address
+    orderData.start_date_time || '', // start
+    orderData.end_date_time || '', // end date
+    String(orderData.deposit || ''), // deposit
+    String(orderData.total_price || ''), // total price
+    orderData.sort_of_payment || '', // sort of payment
+    orderData.notes || '', // notes
+    orderData.job_status || DEFAULT_JOB_STATUS // job status
   ]];
 }
 
@@ -430,26 +431,24 @@ async function createSheetWithHeaders(
 }
 
 /**
- * Get WorkOrders sheet headers
+ * Get deposit sheet headers (matching your existing structure)
  */
 function getWorkOrdersHeaders(): string[] {
   return [
-    'Work ID',
-    'Customer Name',
-    'Address',
-    'Phone',
-    'Job Description',
-    'Total Price',
-    'Deposit',
-    'Job Status',
-    'Start Date/Time',
-    'End Date/Time',
-    'Sort of Payment',
-    'Notes',
-    'Created At',
-    'Updated At',
-    'Created By',
-    'Updated By'
+    'Full message',
+    'Time sent',
+    'from',
+    'group id',
+    'Job ID',
+    'customer name',
+    'address',
+    'start',
+    'end date',
+    'deposit',
+    'total price',
+    'sort of payment',
+    'notes',
+    'job status'
   ];
 }
 
