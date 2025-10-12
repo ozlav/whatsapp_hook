@@ -35,3 +35,23 @@ model WebhookLog {
   @@map("webhook_logs")
   @@schema("web_server_webhook")
 }
+
+// WhatsApp Message - stores processed WhatsApp messages for threading
+model Message {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  
+  // WhatsApp message data
+  messageId String   @unique // key.id from WhatsApp
+  remoteJid String   // group ID (e.g., 120363418663151479@g.us)
+  pushName  String?  // sender display name
+  message   Json     // message content (conversation, extendedTextMessage, etc.)
+  contextInfo Json?  // reply context (stanzaId for threading)
+  
+  // Processing status
+  processed Boolean  @default(false)
+  workOrderId String? // extracted work order ID if found
+  
+  @@map("messages")
+  @@schema("web_server_webhook")
+}
