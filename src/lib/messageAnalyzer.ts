@@ -85,7 +85,7 @@ export async function analyzeFirstMessage(
 Message from ${senderName}: "${messageText}"
 
 Extract the following information and return ONLY a valid JSON object:
-- work_id: The unique work order ID or job number (required)
+- work_id: The unique work order ID, job number, or lead ID. If none found, leave empty (will use address as fallback)
 - address: The full address of the customer (required)
 - phone: The customer's phone number (required)
 - customer_name: The full name of the customer (required)
@@ -130,6 +130,17 @@ Schema requirements: ${JSON.stringify(schema, null, 2)}`;
         customer_name: senderName,
         relevant: false
       };
+    }
+    
+    // Use address as fallback ID if no explicit work_id is provided
+    if (!analysis.work_id || analysis.work_id.trim() === '') {
+      if (analysis.address && analysis.address.trim() !== '') {
+        analysis.work_id = analysis.address;
+        logger.info('Using address as work_id fallback', { 
+          address: analysis.address,
+          workId: analysis.work_id 
+        });
+      }
     }
     
     // Validate required fields
