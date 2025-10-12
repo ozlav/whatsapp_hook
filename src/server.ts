@@ -1,6 +1,7 @@
 import express from 'express';
 import { healthRouter } from './routes/health';
 import { webhookRouter } from './routes/webhook';
+import { graphRouter } from './routes/graph';
 import { logger } from './lib/logger';
 import { env } from './lib/env';
 import { testDatabaseConnection, disconnectDatabase } from './db/client';
@@ -51,6 +52,7 @@ app.use((req, _res, next) => {
 // Routes
 app.use('/health', healthRouter);
 app.use('/webhook', webhookRouter);
+app.use('/graph', graphRouter);
 
 // Root endpoint
 app.get('/', (_req, res) => {

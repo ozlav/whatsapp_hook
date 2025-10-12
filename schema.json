@@ -1,0 +1,53 @@
+{
+    "title": "Payment and Job Data",
+    "type": "object",
+    "properties": {
+      "customer_name": {
+        "type": "string",
+        "description": "The full name of the customer (first and last name if available). May include letters, numbers, or '#' symbols."
+      },
+      "address": {
+        "type": "string",
+        "description": "The full address of the customer."
+      },
+      "start_date_time": {
+        "type": "string",
+        "format": "date-time",
+        "description": "The date and time the service or job started (the earlier date/time)."
+      },
+      "end_date_time": {
+        "type": "string",
+        "format": "date-time",
+        "description": "The date and time the service or job ended (the later date/time)."
+      },
+      "deposit": {
+        "type": "number",
+        "description": "The monetary amount of the deposit. It is the 'small number' or the number following 'deposit'."
+      },
+      "total_price": {
+        "type": "number",
+        "description": "The total monetary amount for the job. This is the 'bigger number' in the deposit format or the number following 'total price'."
+      },
+      "sort_of_payment": {
+        "type": "string",
+        "description": "The method of payment (e.g., cash, check, cc/credit card, etc.)."
+      },
+      "notes": {
+        "type": "string",
+        "description": "Any free text or additional information, especially from a section titled 'note:'."
+      },
+      "job_status": {
+        "type": "string",
+        "description": "The status of the job, such as 'done', 'refund', or 'new' if status is not explicitly mentioned."
+      },
+      "relevant": {
+        "type": "boolean",
+        "description": "Indicates if the message contains sufficient information (e.g., a customer name or total price) to be considered relevant data for processing."
+      }
+    },
+    "required": [
+      "customer_name",
+      "total_price",
+      "relevant" 
+    ]
+  }
