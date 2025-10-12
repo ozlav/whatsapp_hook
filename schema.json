@@ -2,6 +2,10 @@
     "title": "Payment and Job Data",
     "type": "object",
     "properties": {
+      "work_id": {
+        "type": "string",
+        "description": "The unique work order ID or job number. This is a critical identifier for the work order."
+      },
       "customer_name": {
         "type": "string",
         "description": "The full name of the customer (first and last name if available). May include letters, numbers, or '#' symbols."
@@ -9,6 +13,10 @@
       "address": {
         "type": "string",
         "description": "The full address of the customer."
+      },
+      "phone": {
+        "type": "string",
+        "description": "The customer's phone number. Can include various formats like +1-555-123-4567 or (555) 123-4567."
       },
       "start_date_time": {
         "type": "string",
@@ -46,6 +54,9 @@
       }
     },
     "required": [
+      "work_id",
+      "address", 
+      "phone",
       "customer_name",
       "total_price",
       "relevant" 

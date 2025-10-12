@@ -1,0 +1,250 @@
+# =========================
+# Purpose
+# =========================
+You are an AI pair-programmer in Cursor. First, ingest the project overview (from OVERVIEW.md, or README.md if OVERVIEW.md is missing). Then synthesize a realistic plan and create Magic Tasks automatically:
+- Define EPICs (themes/workstreams).
+- Break EPICs into TASKs (3–7 per EPIC).
+- Split each TASK into concrete SUBTASKS (box-checkable, small).
+- Add Acceptance Criteria, Dependencies, File Targets, and Commands to run/verify.
+- Keep tasks up-to-date as files change; tick checkboxes and update Status.
+
+# =========================
+# Input Sources (ordered)
+# =========================
+1) OVERVIEW.md (preferred)
+2) README.md (fallback)
+3) Existing codebase structure (src/, prisma/, etc.)
+
+If conflicting info exists, prefer OVERVIEW.md.
+
+# =========================
+# Project Defaults (can be overridden by overview)
+# =========================
+- Runtime: Node.js 20+
+- Language: TypeScript (strict)
+- Server: Express
+- ORM: Prisma (existing Railway Postgres)
+- LLM workflows: LangGraph
+- Validation: zod
+- Google Sheets: googleapis with Service Account
+- Deploy target: Railway via GitHub
+- No Docker unless explicitly required by system deps
+- App must listen on PORT (Railway injects)
+
+# =========================
+# Magic Tasks — Creation Rules
+# =========================
+When asked to “plan from overview”, do the following:
+
+1) Read OVERVIEW.md (or README.md) and extract:
+   - Goals, non-goals
+   - External services (DB, Google Sheets, APIs)
+   - Feature list (current + near-term)
+   - Constraints (security, performance, DX)
+   - Milestones / deadlines (if present)
+
+2) Create EPICs that map to major concerns:
+   - Backend API
+   - Database & Prisma
+   - LangGraph workflows
+   - Google Sheets integration
+   - Deployment (Railway)
+   - DX & Quality (env validation, logging, tests)
+   - (Any domain-specific epics found in the overview)
+
+3) For each EPIC, create 3–7 TASKs with this template:
+
+TASK:
+  Title: <imperative, short>
+  Rationale: <why this matters>
+  Acceptance Criteria:
+    - <measurable outcome 1>
+    - <measurable outcome 2>
+  Subtasks:
+    - [ ] <atomic step 1>
+    - [ ] <atomic step 2>
+    - [ ] <atomic step 3>
+  Dependencies:
+    - <task-id or “none”>
+  File Targets:
+    - <path/to/file1>
+    - <path/to/file2>
+  Commands:
+    - <command to run/verify>
+  Labels: [backend|infra|langgraph|sheets|db|docs|testing|perf]
+  Estimate: S | M | L (S ~ <2h, M ~ half-day, L ~ 1–2d)
+  Status: planned
+
+4) Prioritize using this order unless the overview specifies otherwise:
+   P0: bootability & health checks → DB connectivity → minimal feature demo  
+   P1: integrations (Sheets, LangGraph skeleton)  
+   P2: production polish (migrations deploy, logging, docs, tests)
+
+5) Always include a **Risk/Unknowns** note for tasks with uncertainty and propose 1–2 mitigation steps.
+
+# =========================
+# Magic Tasks — Update Rules
+# =========================
+- After you create/modify files, post a short “What changed” note and tick relevant subtasks.
+- If a task balloons, split it: create child tasks and link them in Dependencies.
+- Keep Acceptance Criteria crisp; if criteria are met, flip Status to `done`.
+- If a task is blocked (e.g., missing secret/permission), mark Status `blocked` and state the exact blocker + next action.
+
+# =========================
+# Scaffolding Hints (if the overview doesn’t override)
+# =========================
+Folder layout (suggest, don’t enforce):
+  src/
+    server.ts
+    routes/{health.ts,graph.ts}
+    graph/{index.ts,nodes/*}
+    db/client.ts
+    sheets/client.ts
+    lib/env.ts
+  prisma/schema.prisma
+  .env.example
+  README.md
+  OVERVIEW.md
+
+Baseline contracts:
+- GET /health -> { ok: true }
+- POST /graph/run -> { input: string } -> result
+
+Env rules:
+- Validate env with zod in src/lib/env.ts (fail fast).
+- Never log secrets; allow `?sslmode=require` for Postgres.
+
+Railway rules:
+- `build`: prisma generate + tsc
+- `start`: node dist/server.js
+- Bind to `process.env.PORT`
+
+# =========================
+# Examples (task seeds if overview is very short)
+# =========================
+EPIC: Backend API
+TASK:
+  Title: Initialize Express service
+  Rationale: foundation for all endpoints
+  Acceptance Criteria:
+    - `npm run dev` starts server
+    - GET /health returns { ok: true }
+  Subtasks:
+    - [ ] package.json scripts (dev/build/start)
+    - [ ] tsconfig.json (strict)
+    - [ ] src/server.ts with JSON parser and router mounting
+    - [ ] src/routes/health.ts
+  Dependencies:
+    - none
+  File Targets:
+    - package.json, tsconfig.json, src/server.ts, src/routes/health.ts
+  Commands:
+    - npm i express zod
+    - npm i -D typescript ts-node-dev @types/node @types/express
+  Labels: [backend,infra]
+  Estimate: S
+  Status: planned
+
+EPIC: Database & Prisma
+TASK:
+  Title: Add Prisma and connect to Railway DB
+  Rationale: enable read/write
+  Acceptance Criteria:
+    - Prisma client compiles
+    - DB ping logged on boot
+  Subtasks:
+    - [ ] add prisma & @prisma/client; npx prisma init
+    - [ ] prisma/schema.prisma set to postgresql + env("DATABASE_URL")
+    - [ ] src/db/client.ts singleton
+    - [ ] .env.example with placeholders
+    - [ ] zod env validator
+  Dependencies:
+    - Initialize Express service
+  File Targets:
+    - prisma/schema.prisma, src/db/client.ts, src/lib/env.ts, .env.example
+  Commands:
+    - npm i -D prisma && npm i @prisma/client
+    - npx prisma generate
+  Labels: [db,infra]
+  Estimate: M
+  Status: planned
+
+EPIC: Google Sheets
+TASK:
+  Title: Sheets service account client
+  Rationale: data sync to Sheets
+  Acceptance Criteria:
+    - appendValues works against SHEET_ID
+  Subtasks:
+    - [ ] src/sheets/client.ts with JWT + scope
+    - [ ] helper function appendValues(id, range, rows)
+    - [ ] doc: share Sheet with service account email
+  Dependencies:
+    - Initialize Express service
+  File Targets:
+    - src/sheets/client.ts, README.md
+  Commands:
+    - npm i googleapis
+  Labels: [sheets,backend]
+  Estimate: S
+  Status: planned
+
+EPIC: LangGraph
+TASK:
+  Title: LangGraph scaffold + /graph/run
+  Rationale: enable LLM workflows
+  Acceptance Criteria:
+    - buildGraph() returns compiled app
+    - POST /graph/run validates body and returns result
+  Subtasks:
+    - [ ] src/graph/index.ts with StateGraph
+    - [ ] src/routes/graph.ts using zod
+    - [ ] wire route in server
+  Dependencies:
+    - Initialize Express service
+  File Targets:
+    - src/graph/index.ts, src/routes/graph.ts
+  Commands:
+    - npm i @langchain/langgraph zod
+  Labels: [langgraph,backend]
+  Estimate: M
+  Status: planned
+
+EPIC: Deployment
+TASK:
+  Title: Railway deploy (+ variables)
+  Rationale: deliver continuously
+  Acceptance Criteria:
+    - Service builds & starts on Railway
+    - DATABASE_URL set; app binds to PORT
+  Subtasks:
+    - [ ] add README deploy + curl checks
+    - [ ] ensure build/start scripts correct
+    - [ ] add migrate:deploy script
+  Dependencies:
+    - DB connectivity
+  File Targets:
+    - package.json, README.md
+  Commands:
+    - npm run build && npm start (on Railway)
+  Labels: [infra,docs]
+  Estimate: S
+  Status: planned
+
+# =========================
+# Style & Quality
+# =========================
+- Keep subtasks ≤ 20 minutes each where possible.
+- Prefer explicit types; avoid `any`.
+- Keep files <150 lines; split when larger.
+- When adding deps, note the reason in task comments.
+
+# =========================
+# What to do on “plan from overview”
+# =========================
+1) Parse OVERVIEW.md → list goals, features, constraints, integrations.
+2) Propose EPICs with a one-line description each.
+3) Generate tasks using the template above, with estimates and dependencies.
+4) Post the task list in the Tasks panel and set Status = planned.
+5) Wait for confirmation; when approved, start with P0 tasks.
+
