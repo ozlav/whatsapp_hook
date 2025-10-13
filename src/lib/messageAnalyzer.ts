@@ -63,6 +63,7 @@ export interface ReplyAnalysis {
   changesDetected: boolean;
   changedFields: string[];
   newValues?: Record<string, any>;
+  extractedData?: Record<string, any>;
 }
 
 /**
@@ -207,6 +208,7 @@ Analyze the thread and reply, then return ONLY a valid JSON object with:
 - changesDetected: true if the latest reply contains changes to work order fields
 - changedFields: array of field names that changed (e.g., ["job_status", "total_price"])
 - newValues: object with new values for changed fields (optional)
+- extractedData: object with any work order data found in the thread (address, phone, customer_name, etc.)
 
 Work order fields to check for changes:
 - work_id, address, phone, customer_name
@@ -218,6 +220,7 @@ IMPORTANT:
 - Return ONLY valid JSON, no other text
 - Be conservative - only mark changes if you're confident
 - Look for explicit changes in the latest reply
+- Extract work order data from the thread history, not just the latest reply
 - If no work order found in thread, set hasWorkId to false
 - If no changes detected, set changesDetected to false and empty changedFields array
 
@@ -230,6 +233,11 @@ Example response:
   "newValues": {
     "job_status": "completed",
     "notes": "Job finished successfully"
+  },
+  "extractedData": {
+    "address": "123 Main St, City, State",
+    "phone": "(555) 123-4567",
+    "customer_name": "John Doe"
   }
 }`;
 

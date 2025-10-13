@@ -9,7 +9,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["web_server_webhook"]
+  schemas  = ["web_server_webhook", "public"]
 }
 
 // Webhook Log - stores raw webhook calls for analysis
@@ -36,22 +36,21 @@ model WebhookLog {
   @@schema("web_server_webhook")
 }
 
-// WhatsApp Message - stores processed WhatsApp messages for threading
+// EvolutionAPI Message table (for thread history)
 model Message {
   id        String   @id @default(cuid())
+  key       Json     // Contains id, remoteJid, fromMe, participant
+  pushName  String?
+  status    String?
+  message   Json     // Contains conversation, messageContextInfo, etc.
+  contextInfo Json?  // Contains stanzaId, participant, quotedMessage
+  messageType String?
+  messageTimestamp BigInt?
+  instanceId String?
+  source    String?
   createdAt DateTime @default(now())
-  
-  // WhatsApp message data
-  messageId String   @unique // key.id from WhatsApp
-  remoteJid String   // group ID (e.g., 120363418663151479@g.us)
-  pushName  String?  // sender display name
-  message   Json     // message content (conversation, extendedTextMessage, etc.)
-  contextInfo Json?  // reply context (stanzaId for threading)
-  
-  // Processing status
-  processed Boolean  @default(false)
-  workOrderId String? // extracted work order ID if found
-  
-  @@map("messages")
-  @@schema("web_server_webhook")
+  updatedAt DateTime @updatedAt
+
+  @@map("Message")
+  @@schema("public")
 }

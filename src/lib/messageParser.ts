@@ -135,13 +135,12 @@ export function extractRemoteJid(payload: any): string {
 
 /**
  * Check if message is from target group
- * @param payload - WhatsApp webhook payload
+ * @param remoteJid - The remote JID (group ID) to check
  * @param targetGroupId - Target group ID to filter by
  * @returns true if message is from target group
  */
-export function isFromTargetGroup(payload: any, targetGroupId: string): boolean {
+export function isFromTargetGroup(remoteJid: string, targetGroupId: string): boolean {
   try {
-    const remoteJid = extractRemoteJid(payload);
     return remoteJid === targetGroupId;
   } catch (error) {
     return false;

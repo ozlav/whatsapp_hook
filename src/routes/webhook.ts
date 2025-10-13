@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { logger } from '../lib/logger';
 import { getPrismaClient } from '../db/client';
 import { testSheetsConnection } from '../sheets/client';
-import { processWhatsAppMessage, addMessageToDepositSheet } from '../lib/whatsappProcessor';
+import { processWhatsAppMessage } from '../graph/simpleMessageProcessor';
+import { addMessageToDepositSheet } from '../lib/whatsappProcessor';
+import { createNewOrder, convertFirstMessageToOrderData } from '../sheets/operations';
+import { analyzeFirstMessage } from '../lib/messageAnalyzer';
+import { extractMessageText, extractSenderName } from '../lib/messageParser';
 
 const webhookRouter = Router();
 
@@ -150,26 +154,52 @@ webhookRouter.post('/whatsapp/messages-upsert', async (req, res): Promise<void> 
       // Continue processing even if database logging fails
     }
 
-    // Process WhatsApp message and add to deposit sheet
+    // Process WhatsApp message using the proper flow
     try {
       const messageId = req.body.data?.key?.id || 'unknown';
       
-      // Try to process as work order first
-      const processed = await processWhatsAppMessage(req.body);
+      // Process message with proper reply detection and flow
+      const result = await processWhatsAppMessage(req.body);
       
-      if (processed) {
-        logger.info({ requestId, messageId }, 'Messages-upsert processed as work order and added to deposit sheet');
+      if (result.success) {
+        logger.info({ 
+          requestId, 
+          messageId, 
+          messageType: result.messageType 
+        }, 'Messages-upsert processed successfully');
+        
+        // Log analysis results if available
+        if (result.analysis) {
+          logger.info({ 
+            requestId, 
+            messageId,
+            analysis: result.analysis 
+          }, 'Message analysis completed');
+        }
       } else {
-        // If not a work order, add as basic message log
-        await addMessageToDepositSheet(req.body);
-        logger.info({ requestId, messageId }, 'Messages-upsert added to deposit sheet as basic log');
+        logger.warn({ 
+          requestId, 
+          messageId, 
+          error: result.error 
+        }, 'Messages-upsert processing failed');
+        
+        // Fallback: add as basic message log
+        try {
+          await addMessageToDepositSheet(req.body);
+          logger.info({ requestId, messageId }, 'Added to deposit sheet as basic log');
+        } catch (fallbackError) {
+          logger.error({ 
+            requestId, 
+            error: fallbackError instanceof Error ? fallbackError.message : 'Fallback error' 
+          }, 'Failed to add message as basic log');
+        }
       }
-    } catch (sheetsError) {
+    } catch (processingError) {
       logger.error({ 
         requestId, 
-        error: sheetsError instanceof Error ? sheetsError.message : 'Sheets error' 
-      }, 'Failed to process messages-upsert for deposit sheet');
-      // Continue processing even if Sheets save fails
+        error: processingError instanceof Error ? processingError.message : 'Processing error' 
+      }, 'Failed to process messages-upsert');
+      // Continue processing even if message processing fails
     }
 
     // Send success response
@@ -343,6 +373,52 @@ webhookRouter.get('/logs', async (req, res): Promise<void> => {
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'Failed to retrieve webhook logs',
+      requestId
+    });
+  }
+});
+
+// Test endpoint for direct Google Sheets operations
+webhookRouter.post('/test-create-order', async (req, res): Promise<void> => {
+  const requestId = req.headers['x-request-id'] as string;
+  
+  try {
+    const { orderData, fullMessage } = req.body;
+    
+    if (!orderData) {
+      res.status(400).json({
+        error: 'Bad Request',
+        message: 'orderData is required',
+        requestId
+      });
+      return;
+    }
+    
+    logger.info({ requestId, orderData }, 'Testing direct Google Sheets operation');
+    
+    // Test the createNewOrder function directly
+    const result = await createNewOrder(orderData, fullMessage);
+    
+    logger.info({ requestId, result }, 'Direct Google Sheets operation completed');
+    
+    res.json({
+      ok: true,
+      message: 'Order created successfully',
+      result,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error({ 
+      requestId, 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Direct Google Sheets operation failed');
+    
+    res.status(500).json({
+      ok: false,
+      error: 'Google Sheets operation failed',
+      message: error instanceof Error ? error.message : 'Unknown error',
       requestId
     });
   }
