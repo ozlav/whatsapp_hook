@@ -7,6 +7,7 @@ import { logger } from './logger';
 import { createNewOrder, convertFirstMessageToOrderData } from '../sheets/operations';
 import { analyzeFirstMessage } from './messageAnalyzer';
 import { extractMessageText, extractSenderName, isFromTargetGroup } from './messageParser';
+import { env } from './env';
 
 /**
  * Process a WhatsApp webhook message and add to deposit sheet
@@ -21,8 +22,16 @@ export async function processWhatsAppMessage(webhookData: any): Promise<boolean>
     const remoteJid = messageData.key?.remoteJid;
 
     // Check if message is from target group
-    const targetGroupId = '120363418663151479@g.us'; // You can make this configurable
-    if (!isFromTargetGroup(messageData, targetGroupId)) {
+    const targetGroupId = env.TARGET_GROUP_ID || '120363418663151479@g.us'; // Use env var or fallback
+    const isFromGroup = isFromTargetGroup(messageData, targetGroupId);
+    logger.info('Group check', { 
+      remoteJid, 
+      targetGroupId, 
+      isFromGroup,
+      messageData: JSON.stringify(messageData, null, 2)
+    });
+    
+    if (!isFromGroup) {
       logger.info('Message not from target group, skipping', { remoteJid });
       return false;
     }
@@ -90,7 +99,23 @@ export async function addMessageToDepositSheet(webhookData: any): Promise<boolea
     const messageData = webhookData.data;
     const messageText = extractMessageText(messageData);
     const senderName = extractSenderName(messageData);
+    const remoteJid = messageData.key?.remoteJid;
     const timestamp = new Date().toISOString();
+
+    // Check if message is from target group (same as processWhatsAppMessage)
+    const targetGroupId = env.TARGET_GROUP_ID || '120363418663151479@g.us'; // Use env var or fallback
+    const isFromGroup = isFromTargetGroup(messageData, targetGroupId);
+    
+    if (!isFromGroup) {
+      logger.info('Message not from target group, skipping basic log', { remoteJid });
+      return false;
+    }
+
+    // Skip if no message text
+    if (!messageText || messageText.trim().length === 0) {
+      logger.info('No message text found, skipping basic log');
+      return false;
+    }
 
     // Create a basic order data structure
     const basicOrderData = {
@@ -115,9 +140,10 @@ export async function addMessageToDepositSheet(webhookData: any): Promise<boolea
     // Add to deposit sheet
     await createNewOrder(basicOrderData, messageText);
     
-    logger.info('Added message to deposit sheet', { 
+    logger.info('Added message to deposit sheet as basic log', { 
       workId: basicOrderData.work_id,
-      senderName 
+      senderName,
+      remoteJid
     });
     
     return true;
