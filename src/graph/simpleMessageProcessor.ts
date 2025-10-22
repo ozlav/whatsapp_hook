@@ -4,15 +4,21 @@
  * This is a working implementation that we can enhance with LangGraph later
  */
 
-import { analyzeFirstMessage, analyzeReplyMessage, FirstMessageAnalysis, ReplyAnalysis } from '../lib/messageAnalyzer';
-import { isReplyMessage, extractMessageText, extractSenderName } from '../lib/messageParser';
-import { getThreadHistoryForReply } from '../db/queries/threadQueries';
-import { createNewOrder, convertFirstMessageToOrderData, findSheetRowByWorkId, updateSheetRow } from '../sheets/operations';
+import { analyzeMessage, analyzeReplyMessage, FirstMessageAnalysis, ReplyAnalysis } from '../lib/messageAnalyzer';
+import { isReplyMessage } from '../lib/messageParser';
+import { createNewOrder, convertFirstMessageToOrderData, getSheetRowByWorkId, updateSheetRowByIndices, appendUpdateLog, logMessage } from '../sheets/operations';
 import { logger } from '../lib/logger';
 import { env } from '../lib/env';
+import { 
+  validateMessageText, 
+  validateSenderName, 
+  validateTargetGroup,
+  ValidatedWebhookPayload 
+} from '../lib/validation';
+
 
 /**
- * Process a WhatsApp message (simplified approach)
+ * Process a WhatsApp message following the logic defined in overview.md
  * @param payload - WhatsApp webhook payload
  * @returns Processing result
  */
@@ -23,215 +29,50 @@ export async function processWhatsAppMessage(payload: any): Promise<{
   error?: string;
 }> {
   try {
-    // Extract basic message info
-    const messageText = extractMessageText(payload);
-    const senderName = extractSenderName(payload);
-    const messageId = payload.data?.key?.id || 'unknown';
-    const remoteJid = payload.data?.key?.remoteJid || 'unknown';
+    // Step 1: Validate webhook payload
+    const validatedPayload = payload; // Already validated at the router level
+    const messageId = validatedPayload.data.key.id;
+    const remoteJid = validatedPayload.data.key.remoteJid;
     
-    // Check if from target group
-    const targetGroupId = env.TARGET_GROUP_ID || '120363418663151479@g.us'; // Use env var or fallback
-    logger.info('Group check debug', { 
-      remoteJid, 
-      targetGroup: targetGroupId,
-      match: remoteJid === targetGroupId 
-    });
-    
-    if (remoteJid !== targetGroupId) {
-      logger.info('Message from non-target group, ignoring', { remoteJid, targetGroup: targetGroupId });
-      return {
-        success: true,
-        messageType: 'ignored'
-      };
-    }
-    
-    // Check if message is a reply
-    if (isReplyMessage(payload)) {
-      logger.info('Processing reply message', { messageId, senderName });
-      
-      // For replies, we can extract the original message from quotedMessage
-      // This avoids needing to query the EvolutionAPI database
-      const quotedMessage = payload.data?.contextInfo?.quotedMessage;
-      if (!quotedMessage || !quotedMessage.conversation) {
-        logger.warn('Reply message has no quoted message content', { messageId });
-        return {
-          success: false,
-          messageType: 'reply',
-          error: 'No quoted message found'
-        };
-      }
-      
-      // Get thread history using the quoted message
-      const threadHistory = await getThreadHistoryForReply(messageId, env.TARGET_GROUP_ID || '', quotedMessage);
-      
-      if (threadHistory.length === 0) {
-        logger.warn('No thread history found for reply', { messageId });
-        return {
-          success: false,
-          messageType: 'reply',
-          error: 'No thread history found'
-        };
-      }
-      
-      logger.info('Using quoted message as thread history', { 
+    logger.info('Processing WhatsApp message', { messageId, remoteJid });
+
+    // Step 2: Check if message is from target group
+    if (!validateTargetGroup(remoteJid)) {
+      logger.info('Message not from target group, ignoring', { 
         messageId, 
-        quotedMessageLength: quotedMessage.conversation.length,
-        threadLength: threadHistory.length
+        remoteJid,
+        targetGroup: env.TARGET_GROUP_ID || '120363418663151479@g.us'
       });
-      
-      // Analyze reply
-      const analysis = await analyzeReplyMessage(messageText, senderName, threadHistory);
-      
-      // If changes are detected, update the Google Sheet
-      if (analysis.changesDetected && analysis.hasWorkId && analysis.workId) {
-        try {
-          logger.info('Reply contains work order changes, updating Google Sheet', {
-            workId: analysis.workId,
-            changedFields: analysis.changedFields,
-            newValues: analysis.newValues
-          });
-          
-          // Find the existing row by work ID
-          const rowNumber = await findSheetRowByWorkId(analysis.workId);
-          
-          if (rowNumber) {
-            // Update the existing row
-            const updates: any = {
-              updated_at: new Date().toISOString(),
-              updated_by: senderName
-            };
-            
-            // Add the changed fields to the update
-            if (analysis.newValues) {
-              Object.assign(updates, analysis.newValues);
-            }
-            
-            // Add extracted data from thread history if available
-            if (analysis.extractedData) {
-              // Only add extracted data if we don't already have it in newValues
-              for (const [key, value] of Object.entries(analysis.extractedData)) {
-                if (!updates[key] && value) {
-                  updates[key] = value;
-                }
-              }
-            }
-            
-            // Add notes with the reply message
-            if (messageText) {
-              updates.notes = (updates.notes || '') + ` | Reply: ${messageText}`;
-            }
-            
-            await updateSheetRow(rowNumber, updates);
-            
-            logger.info('Successfully updated existing work order in Google Sheet', {
-              workId: analysis.workId,
-              rowNumber,
-              changedFields: analysis.changedFields
-            });
-          } else {
-            // Work order not found, create a new one
-            logger.warn('Work order not found in Google Sheet, creating new entry', {
-              workId: analysis.workId
-            });
-            
-            const orderData = convertFirstMessageToOrderData({
-              work_id: analysis.workId,
-              address: analysis.extractedData?.address || '',
-              phone: analysis.extractedData?.phone || '',
-              customer_name: analysis.extractedData?.customer_name || senderName,
-              job_description: analysis.extractedData?.job_description || '',
-              total_price: analysis.extractedData?.total_price || analysis.newValues?.total_price || 0,
-              deposit: analysis.extractedData?.deposit || analysis.newValues?.deposit || 0,
-              job_status: analysis.newValues?.job_status || 'updated',
-              start_date_time: analysis.extractedData?.start_date_time || analysis.newValues?.start_date_time || null,
-              end_date_time: analysis.extractedData?.end_date_time || analysis.newValues?.end_date_time || null,
-              sort_of_payment: analysis.extractedData?.sort_of_payment || analysis.newValues?.sort_of_payment || '',
-              notes: analysis.newValues?.notes || messageText,
-              relevant: true
-            }, senderName);
-            
-            await createNewOrder(orderData, messageText);
-            
-            logger.info('Successfully created new work order from reply', {
-              workId: analysis.workId,
-              changedFields: analysis.changedFields
-            });
-          }
-        } catch (sheetsError) {
-          logger.error('Failed to update work order in Google Sheets', {
-            error: sheetsError instanceof Error ? sheetsError.message : 'Unknown error',
-            workId: analysis.workId
-          });
-          
-          return {
-            success: false,
-            messageType: 'reply',
-            analysis,
-            error: 'Failed to update Google Sheets'
-          };
-        }
-      } else {
-        logger.info('Reply message has no work order changes', { 
-          hasWorkId: analysis.hasWorkId,
-          changesDetected: analysis.changesDetected 
-        });
-      }
-      
       return {
         success: true,
-        messageType: 'reply',
-        analysis
-      };
-    } else {
-      logger.info('Processing first message', { messageId, senderName });
-      
-      // Analyze first message
-      const analysis = await analyzeFirstMessage(messageText, senderName);
-      
-      // If analysis is relevant, add to Google Sheets
-      if (analysis.relevant) {
-        try {
-          // Convert to order data
-          const orderData = convertFirstMessageToOrderData(analysis, senderName);
-          
-          // Add to deposit sheet
-          await createNewOrder(orderData, messageText);
-          
-          logger.info('Successfully added work order to deposit sheet', {
-            workId: analysis.work_id,
-            customerName: analysis.customer_name
-          });
-        } catch (sheetsError) {
-          logger.error('Failed to add work order to Google Sheets', {
-            error: sheetsError instanceof Error ? sheetsError.message : 'Unknown error',
-            workId: analysis.work_id
-          });
-          
-          return {
-            success: false,
-            messageType: 'first',
-            analysis,
-            error: 'Failed to add to Google Sheets'
-          };
-        }
-      } else {
-        logger.info('Message not relevant for work order processing', { 
-          messageText: messageText.substring(0, 100) 
-        });
-      }
-      
-      return {
-        success: true,
-        messageType: 'first',
-        analysis
+        messageType: 'ignored',
+        error: 'Message not from target group'
       };
     }
-  } catch (error) {
-    logger.error('Message processing failed', { 
-      error: error instanceof Error ? error.message : 'Unknown error',
-      payload: JSON.stringify(payload).substring(0, 200)
-    });
+
+    // Step 3: Extract and validate message text
+    const messageText = validateMessageText(validatedPayload);
+    const senderName = validateSenderName(validatedPayload);
+
+    // Step 4: Log ALL messages to Logs sheet first
+    await logMessage(messageText, senderName, 'ignored', undefined, 'Message received');
+
+    // Step 5: Check if message is a reply
+    const isReply = isReplyMessage(validatedPayload);
     
+    if (isReply) {
+      return await processReplyMessage(validatedPayload, messageText, senderName);
+    } else {
+      return await processFirstMessage(validatedPayload, messageText, senderName);
+    }
+
+  } catch (error) {
+    logger.error('Message processing failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      messageId: payload?.data?.key?.id || 'unknown'
+    });
+
+    // Return error without additional logging (message already logged)
     return {
       success: false,
       messageType: 'ignored',
@@ -241,27 +82,271 @@ export async function processWhatsAppMessage(payload: any): Promise<{
 }
 
 /**
- * Test the message processor
+ * Process a first message (new work order)
+ * @param payload - Validated webhook payload
+ * @param messageText - Extracted message text
+ * @param senderName - Sender name
+ * @returns Processing result
  */
-export async function testMessageProcessor(): Promise<void> {
+async function processFirstMessage(
+  payload: ValidatedWebhookPayload,
+  messageText: string,
+  senderName: string
+): Promise<{
+  success: boolean;
+  messageType: 'first' | 'reply' | 'ignored';
+  analysis?: FirstMessageAnalysis | ReplyAnalysis;
+  error?: string;
+}> {
   try {
-    // Test first message
-    const firstMessagePayload = {
-      data: {
-        key: {
-          id: 'test_123',
-          remoteJid: env.TARGET_GROUP_ID || '120363418663151479@g.us'
-        },
-        pushName: 'Test User',
-        message: {
-          conversation: 'Work order #WO-12345 for John Doe at 123 Main St, $500 total'
-        }
-      }
-    };
+    const messageId = payload.data.key.id;
     
-    const result = await processWhatsAppMessage(firstMessagePayload);
-    console.log('Test result:', result);
+    logger.info('Processing first message', { messageId, senderName });
+
+    // Step 1: Analyze message with LLM
+    const analysis = await analyzeMessage(messageText, senderName);
+    
+    // Step 2: Check if LLM determined the message is relevant
+    if (!analysis.relevant) {
+      logger.info('Message not relevant according to LLM analysis', { 
+        messageId,
+        workId: analysis.work_id
+      });
+      
+      return {
+        success: true,
+        messageType: 'ignored',
+        analysis,
+        error: 'Message not relevant according to LLM analysis'
+      };
+    }
+
+    // Step 3: Create new work order in Google Sheets
+    const orderData = convertFirstMessageToOrderData(analysis, senderName);
+    await createNewOrder(orderData, messageText);
+    
+    logger.info('Successfully processed first message', {
+      messageId,
+      workId: analysis.work_id,
+      customerName: analysis.customer_name
+    });
+
+    return {
+      success: true,
+      messageType: 'first',
+      analysis
+    };
+
   } catch (error) {
-    console.error('Test failed:', error);
+    logger.error('First message processing failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      messageId: payload.data.key.id
+    });
+
+    // Return error without additional logging (message already logged)
+    return {
+      success: false,
+      messageType: 'ignored',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 }
+
+/**
+ * Process a reply message (update existing work order)
+ * @param payload - Validated webhook payload
+ * @param messageText - Extracted message text
+ * @param senderName - Sender name
+ * @returns Processing result
+ */
+async function processReplyMessage(
+  payload: ValidatedWebhookPayload,
+  messageText: string,
+  senderName: string
+): Promise<{
+  success: boolean;
+  messageType: 'first' | 'reply' | 'ignored';
+  analysis?: FirstMessageAnalysis | ReplyAnalysis;
+  error?: string;
+}> {
+  try {
+    const messageId = payload.data.key.id;
+    const quotedMessageId = payload.data.contextInfo?.stanzaId;
+    
+    logger.info('Processing reply message', { 
+      messageId, 
+      senderName, 
+      quotedMessageId,
+      replyText: messageText.substring(0, 100) + '...'
+    });
+
+    // Step 1: Extract quoted message content from the reply payload
+    // In EvolutionAPI, the quoted message content is in the contextInfo.quotedMessage
+    let quotedMessageText = '';
+    
+    if ((payload.data.contextInfo as any)?.quotedMessage) {
+      const quotedMsg = (payload.data.contextInfo as any).quotedMessage;
+      if (quotedMsg.conversation) {
+        quotedMessageText = quotedMsg.conversation;
+      } else if (quotedMsg.extendedTextMessage?.text) {
+        quotedMessageText = quotedMsg.extendedTextMessage.text;
+      } else if (quotedMsg.imageMessage?.caption) {
+        quotedMessageText = quotedMsg.imageMessage.caption;
+      }
+    }
+
+    if (!quotedMessageText || quotedMessageText.trim().length === 0) {
+      logger.warn('No quoted message content found in reply', { 
+        messageId, 
+        quotedMessageId,
+        hasQuotedMessage: !!(payload.data.contextInfo as any)?.quotedMessage
+      });
+      
+      return {
+        success: true,
+        messageType: 'ignored',
+        error: 'No quoted message content found in reply'
+      };
+    }
+
+    logger.info('Found quoted message content', { 
+      messageId,
+      quotedTextLength: quotedMessageText.length,
+      quotedText: quotedMessageText.substring(0, 200) + '...'
+    });
+
+    // Step 2: Analyze the quoted message with LLM to extract work_id
+    const analysis = await analyzeMessage(quotedMessageText, senderName);
+
+    // Step 3: Check if analysis contains a work_id
+    if (!analysis.work_id || analysis.work_id.trim() === '') {
+      logger.info('No work_id found in quoted message analysis', { 
+        messageId,
+        quotedText: quotedMessageText.substring(0, 100) + '...'
+      });
+      
+      return {
+        success: true,
+        messageType: 'ignored',
+        analysis,
+        error: 'No work_id found in quoted message analysis'
+      };
+    }
+
+    logger.info('Found work_id in quoted message', { 
+      messageId, 
+      workId: analysis.work_id 
+    });
+
+    // Step 4: Get full work order data from Google Sheets (including headers)
+    const sheetData = await getSheetRowByWorkId(analysis.work_id);
+    
+    if (!sheetData) {
+      logger.warn('Work order not found in Google Sheets', { 
+        messageId, 
+        workId: analysis.work_id 
+      });
+      
+      return {
+        success: true,
+        messageType: 'ignored',
+        analysis,
+        error: 'Work order not found in Google Sheets'
+      };
+    }
+
+    logger.info('Found existing work order with full data', { 
+      messageId, 
+      workId: analysis.work_id, 
+      rowNumber: sheetData.rowNumber,
+      headers: sheetData.headers
+    });
+
+    // Step 5: Analyze the reply message for potential updates using current row data
+    const replyAnalysis = await analyzeReplyMessage(
+      messageText, 
+      senderName, 
+      analysis.work_id,
+      sheetData.headers,
+      sheetData.rowData,
+      sheetData.columnIndices
+    );
+    
+    // Step 6: Update Google Sheets row with reply message and any detected changes
+    const columnUpdates: Record<number, any> = {};
+    
+    // Always update notes column with the reply message
+    const notesColumnIndex = sheetData.columnIndices['notes'];
+    if (notesColumnIndex !== undefined) {
+      columnUpdates[notesColumnIndex] = messageText;
+    }
+    
+    // Add any column updates from reply analysis
+    if (replyAnalysis.columnUpdates) {
+      Object.assign(columnUpdates, replyAnalysis.columnUpdates);
+    }
+    
+    await updateSheetRowByIndices(sheetData.rowNumber, columnUpdates);
+    
+    // Step 7: Log update to audit trail
+    const changedFields =   ['notes'];
+    const newValues: Record<string, any> = { notes: messageText };
+    
+    if (replyAnalysis.columnUpdates) {
+      // Convert column indices back to field names for logging
+      for (const [columnIndex, value] of Object.entries(replyAnalysis.columnUpdates)) {
+        const colIndex = parseInt(columnIndex);
+        const fieldName = Object.keys(sheetData.columnIndices).find(
+          key => sheetData.columnIndices[key] === colIndex
+        );
+        if (fieldName) {
+          changedFields.push(fieldName);
+          newValues[fieldName] = value;
+        }
+      }
+    }
+    
+    await appendUpdateLog(analysis.work_id, {
+      workId: analysis.work_id,
+      changesDetected: true,
+      changedFields,
+      newValues
+    });
+    
+    // Log the changes to the database
+    const changesSummary = changedFields.map(field => {
+      const value = newValues[field] || '';
+      return `${field}: ${value}`;
+    }).join(', ');
+    
+    logger.info('Successfully processed reply message', {
+      messageId,
+      workId: analysis.work_id,
+      replyMessage: messageText,
+      rowNumber: sheetData.rowNumber,
+      changedFields,
+      changesSummary
+    });
+
+    return {
+      success: true,
+      messageType: 'reply',
+      analysis: replyAnalysis
+    };
+
+  } catch (error) {
+    logger.error('Reply message processing failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      messageId: payload.data.key.id,
+      stack: error instanceof Error ? error.stack : undefined
+    });
+
+    // Return error without additional logging (message already logged)
+    return {
+      success: false,
+      messageType: 'ignored',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+

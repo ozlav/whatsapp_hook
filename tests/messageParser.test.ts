@@ -225,36 +225,18 @@ describe('Message Parser', () => {
 
   describe('isFromTargetGroup', () => {
     it('should return true for message from target group', () => {
-      const payload = {
-        data: {
-          key: {
-            remoteJid: targetGroupId
-          }
-        }
-      };
-      expect(isFromTargetGroup(payload, targetGroupId)).toBe(true);
+      const remoteJid = targetGroupId;
+      expect(isFromTargetGroup(remoteJid, targetGroupId)).toBe(true);
     });
 
     it('should return false for message from different group', () => {
-      const payload = {
-        data: {
-          key: {
-            remoteJid: '120363999999999999@g.us'
-          }
-        }
-      };
-      expect(isFromTargetGroup(payload, targetGroupId)).toBe(false);
+      const remoteJid = '120363999999999999@g.us';
+      expect(isFromTargetGroup(remoteJid, targetGroupId)).toBe(false);
     });
 
     it('should return false for missing remoteJid', () => {
-      const payload = {
-        data: {
-          message: {
-            conversation: 'Hello'
-          }
-        }
-      };
-      expect(isFromTargetGroup(payload, targetGroupId)).toBe(false);
+      const remoteJid = '';
+      expect(isFromTargetGroup(remoteJid, targetGroupId)).toBe(false);
     });
   });
 
@@ -277,7 +259,7 @@ describe('Message Parser', () => {
       expect(extractMessageText(payload)).toBe('Work order #12345 for 123 Main St, $500 total');
       expect(extractSenderName(payload)).toBe('John Doe');
       expect(extractMessageId(payload)).toBe('3EB0C767D26B5A6B5A6B');
-      expect(isFromTargetGroup(payload, targetGroupId)).toBe(true);
+      expect(isFromTargetGroup(payload.data.key.remoteJid, targetGroupId)).toBe(true);
     });
 
     it('should handle typical reply message', () => {
@@ -301,7 +283,7 @@ describe('Message Parser', () => {
       expect(extractQuotedMessageId(payload)).toBe('3EB0C767D26B5A6B5A6B');
       expect(extractMessageText(payload)).toBe('Update: job is done, status changed to completed');
       expect(extractSenderName(payload)).toBe('Jane Smith');
-      expect(isFromTargetGroup(payload, targetGroupId)).toBe(true);
+      expect(isFromTargetGroup(payload.data.key.remoteJid, targetGroupId)).toBe(true);
     });
   });
 });

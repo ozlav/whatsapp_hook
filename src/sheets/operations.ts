@@ -3,7 +3,7 @@
  * Supports both new work order creation and updates to existing orders
  */
 
-import { appendToSheet, getSheetData, createSheet, initializeSheetsClient } from './client';
+import { appendToSheet, getSheetData, createSheet, initializeSheetsClient, getSheetIdByName } from './client';
 import { FirstMessageAnalysis, ReplyAnalysis } from '../lib/messageAnalyzer';
 import { logger } from '../lib/logger';
 import { env } from '../lib/env';
@@ -11,12 +11,15 @@ import { env } from '../lib/env';
 // Constants
 const SHEET_NAMES = {
   WORK_ORDERS: 'Deposite', // Using your existing Deposite sheet
+  LOGS: 'Logs', // All messages from target group
   AUDIT_LOG: 'AuditLog'
 } as const;
 
 const RANGES = {
   WORK_ORDERS_DATA: 'Deposite!A:N', // 14 columns in your Deposite sheet (added Job ID)
   WORK_ORDERS_HEADERS: 'Deposite!A1:N1',
+  LOGS_DATA: 'Logs!A:F', // Simple log format: timestamp, sender, message, type, work_id, notes
+  LOGS_HEADERS: 'Logs!A1:F1',
   AUDIT_LOG_DATA: 'AuditLog!A:F',
   AUDIT_LOG_HEADERS: 'AuditLog!A1:F1'
 } as const;
@@ -28,6 +31,28 @@ const OPERATION_TYPES = {
 
 const DEFAULT_JOB_STATUS = 'new';
 const HEADER_ROW_INDEX = 1; // 1-based row number for header row
+
+// Cache for sheet IDs to avoid repeated API calls
+let depositeSheetId: number | null = null;
+
+/**
+ * Get the Deposite sheet ID (cached for performance)
+ * @returns The sheet ID for the Deposite tab
+ */
+async function getDepositeSheetId(): Promise<number> {
+  if (depositeSheetId !== null) {
+    return depositeSheetId;
+  }
+
+  const sheetId = await getSheetIdByName(SHEET_NAMES.WORK_ORDERS);
+  if (sheetId === null) {
+    throw new Error(`Sheet '${SHEET_NAMES.WORK_ORDERS}' not found in spreadsheet`);
+  }
+
+  depositeSheetId = sheetId;
+  logger.info({ sheetId, sheetName: SHEET_NAMES.WORK_ORDERS }, 'Cached Deposite sheet ID');
+  return sheetId;
+}
 
 /**
  * Work Order Data structure for Google Sheets
@@ -81,6 +106,55 @@ export interface ChangeAnalysis {
   changesDetected: boolean;
   changedFields: string[];
   newValues?: Record<string, any>;
+}
+
+/**
+ * Log any message to the Logs sheet
+ * @param messageText - The message text
+ * @param senderName - The sender's name
+ * @param messageType - Type of message (first, reply, ignored)
+ * @param workId - Work ID if available
+ * @param notes - Additional notes
+ * @returns Promise<boolean> - Success status
+ */
+export async function logMessage(
+  messageText: string,
+  senderName: string,
+  messageType: 'first' | 'reply' | 'ignored',
+  workId?: string,
+  notes?: string
+): Promise<boolean> {
+  try {
+    const timestamp = new Date().toISOString();
+    
+    const logData = [[
+      timestamp, // A: timestamp
+      senderName, // B: sender
+      messageText, // C: message
+      messageType, // D: type
+      workId || '', // E: work_id
+      notes || '' // F: notes
+    ]];
+
+    await appendToSheet(RANGES.LOGS_DATA, logData);
+    
+    logger.info('Message logged to Logs sheet', { 
+      senderName,
+      messageType,
+      workId,
+      messageLength: messageText.length
+    });
+    
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to log message to Logs sheet', { 
+      senderName,
+      messageType,
+      error: errorMessage
+    });
+    return false;
+  }
 }
 
 /**
@@ -158,6 +232,108 @@ export async function findSheetRowByWorkId(workId: string): Promise<number | nul
 }
 
 /**
+ * Get full row data by work ID including headers and column indices
+ * @param workId - The work order ID to search for
+ * @returns Object with headers, row data, column indices, and row number, or null if not found
+ */
+export async function getSheetRowByWorkId(workId: string): Promise<{ 
+  headers: string[], 
+  rowData: string[], 
+  columnIndices: Record<string, number>,
+  rowNumber: number 
+} | null> {
+  try {
+    logger.info('Getting full row data for work order', { workId });
+    
+    const [headersData, data] = await Promise.all([
+      getSheetData(RANGES.WORK_ORDERS_HEADERS),
+      getSheetData(RANGES.WORK_ORDERS_DATA)
+    ]);
+    
+    if (data.length === 0) {
+      logger.warn('No data found in WorkOrders sheet');
+      return null;
+    }
+
+    const headers = headersData[0] || getWorkOrdersHeaders();
+
+    // Create column index mapping (header name -> column index)
+    const columnIndices: Record<string, number> = {};
+    headers.forEach((header, index) => {
+      columnIndices[header] = index;
+    });
+
+    // Search for the work_id in the Job ID column (column E, index 4)
+    for (let i = HEADER_ROW_INDEX; i < data.length; i++) {
+      const row = data[i];
+      if (row && row.length > 4 && row[4] === workId) { // Job ID is in column E (index 4)
+        const rowNumber = i + 1; // Convert to 1-based row number
+        logger.info('Found work order with full data', { workId, rowNumber, columnIndices });
+        return {
+          headers,
+          rowData: row,
+          columnIndices,
+          rowNumber
+        };
+      }
+    }
+
+    logger.warn('Work order not found', { workId });
+    return null;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to get work order row data', { 
+      workId,
+      error: errorMessage
+    });
+    return null;
+  }
+}
+
+/**
+ * Update a specific row in Google Sheets using column indices
+ * @param rowNumber - The row number to update (1-based)
+ * @param columnUpdates - Object mapping column indices to new values
+ * @throws {Error} When Google Sheets API fails or no valid updates provided
+ */
+export async function updateSheetRowByIndices(rowNumber: number, columnUpdates: Record<number, any>): Promise<void> {
+  try {
+    logger.info('Updating work order row by column indices', { rowNumber, columnUpdates });
+    
+    const client = await initializeSheetsClient();
+    const sheetId = env.GOOGLE_SHEET_ID;
+    
+    if (!sheetId) {
+      throw new Error('GOOGLE_SHEET_ID is required');
+    }
+
+    const requests = await buildColumnUpdateRequests(rowNumber, columnUpdates);
+
+    if (requests.length === 0) {
+      logger.warn('No valid updates to apply', { rowNumber });
+      return;
+    }
+
+    await client.spreadsheets.batchUpdate({
+      spreadsheetId: sheetId,
+      requestBody: { requests }
+    });
+
+    logger.info('Successfully updated work order row by column indices', { 
+      rowNumber, 
+      updatedColumns: Object.keys(columnUpdates)
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to update work order row by column indices', { 
+      rowNumber,
+      error: errorMessage
+    });
+    throw new Error(`Failed to update work order: ${errorMessage}`);
+  }
+}
+
+/**
  * Update a specific row in Google Sheets
  * @param rowNumber - The row number to update (1-based)
  * @param updates - The fields to update
@@ -174,7 +350,7 @@ export async function updateSheetRow(rowNumber: number, updates: Partial<OrderDa
       throw new Error('GOOGLE_SHEET_ID is required');
     }
 
-    const requests = buildUpdateRequests(rowNumber, updates);
+    const requests = await buildUpdateRequests(rowNumber, updates);
 
     if (requests.length === 0) {
       logger.warn('No valid updates to apply', { rowNumber });
@@ -280,12 +456,12 @@ export function convertFirstMessageToOrderData(
  * @returns Partial OrderData for updates
  * @example
  * ```typescript
- * const analysis = { hasWorkId: true, workId: 'WO-123', newValues: { job_status: 'completed' } };
+ * const analysis = { changesDetected: true, changedFields: ['job_status'], columnUpdates: {13: 'completed'} };
  * const updates = convertReplyAnalysisToUpdates(analysis, 'Jane Smith');
  * ```
  */
 export function convertReplyAnalysisToUpdates(
-  analysis: ReplyAnalysis,
+  _analysis: ReplyAnalysis,
   senderName: string
 ): Partial<OrderData> {
   const timestamp = new Date().toISOString();
@@ -295,10 +471,9 @@ export function convertReplyAnalysisToUpdates(
     updated_by: senderName
   };
 
-  // Add the new values from the analysis
-  if (analysis.newValues) {
-    Object.assign(updates, analysis.newValues);
-  }
+  // Note: This function is now deprecated since we use column indices directly
+  // The new approach uses updateSheetRowByIndices() with columnUpdates
+  logger.warn('convertReplyAnalysisToUpdates is deprecated, use column indices directly');
 
   return updates;
 }
@@ -315,6 +490,12 @@ export async function initializeSheets(): Promise<void> {
       SHEET_NAMES.WORK_ORDERS,
       RANGES.WORK_ORDERS_HEADERS,
       getWorkOrdersHeaders()
+    );
+
+    await createSheetWithHeaders(
+      SHEET_NAMES.LOGS,
+      RANGES.LOGS_HEADERS,
+      getLogsHeaders()
     );
 
     await createSheetWithHeaders(
@@ -379,10 +560,46 @@ async function logAuditEntry(
 }
 
 /**
+ * Build update requests for Google Sheets batch update using column indices
+ */
+async function buildColumnUpdateRequests(rowNumber: number, columnUpdates: Record<number, any>): Promise<any[]> {
+  const requests: any[] = [];
+  const sheetId = await getDepositeSheetId();
+  
+  for (const [columnIndex, value] of Object.entries(columnUpdates)) {
+    const colIndex = parseInt(columnIndex);
+    if (!isNaN(colIndex) && value !== undefined) {
+      requests.push({
+        updateCells: {
+          range: {
+            sheetId: sheetId, // Use dynamic Deposite sheet ID
+            startRowIndex: rowNumber - 1, // Convert to 0-based
+            endRowIndex: rowNumber,
+            startColumnIndex: colIndex,
+            endColumnIndex: colIndex + 1
+          },
+          rows: [{
+            values: [{
+              userEnteredValue: {
+                stringValue: String(value)
+              }
+            }]
+          }],
+          fields: 'userEnteredValue'
+        }
+      });
+    }
+  }
+
+  return requests;
+}
+
+/**
  * Build update requests for Google Sheets batch update
  */
-function buildUpdateRequests(rowNumber: number, updates: Partial<OrderData>): any[] {
+async function buildUpdateRequests(rowNumber: number, updates: Partial<OrderData>): Promise<any[]> {
   const requests: any[] = [];
+  const sheetId = await getDepositeSheetId();
   
   for (const [field, value] of Object.entries(updates)) {
     if (value !== undefined && COLUMN_MAP[field as keyof typeof COLUMN_MAP]) {
@@ -390,7 +607,7 @@ function buildUpdateRequests(rowNumber: number, updates: Partial<OrderData>): an
       requests.push({
         updateCells: {
           range: {
-            sheetId: 0, // First sheet
+            sheetId: sheetId, // Use dynamic Deposite sheet ID
             startRowIndex: rowNumber - 1, // Convert to 0-based
             endRowIndex: rowNumber,
             startColumnIndex: column.charCodeAt(0) - 65, // Convert A=0, B=1, etc.
@@ -449,6 +666,20 @@ function getWorkOrdersHeaders(): string[] {
     'sort of payment',
     'notes',
     'job status'
+  ];
+}
+
+/**
+ * Get Logs sheet headers
+ */
+function getLogsHeaders(): string[] {
+  return [
+    'Timestamp',
+    'Sender',
+    'Message',
+    'Type',
+    'Work ID',
+    'Notes'
   ];
 }
 

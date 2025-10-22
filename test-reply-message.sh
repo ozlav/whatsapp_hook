@@ -1,13 +1,22 @@
 #!/bin/bash
 
 # Test script for REPLY message (with contextInfo.stanzaId)
-# Usage: ./test-reply-message.sh [port]
+# Usage: ./test-reply-message.sh [environment]
+# Environment options: local, production (default: production)
 
-PORT=${1:-3000}
-HOST="localhost"
-URL="http://${HOST}:${PORT}/webhook/whatsapp/messages-upsert"
+ENVIRONMENT=${1:-production}
+
+if [ "$ENVIRONMENT" = "local" ]; then
+  HOST="localhost"
+  PORT="3000"
+  URL="http://${HOST}:${PORT}/webhook/whatsapp/messages-upsert"
+else
+  HOST="whatsapphook-production.up.railway.app"
+  URL="https://${HOST}/webhook/whatsapp/messages-upsert"
+fi
 
 echo "🚀 Testing REPLY message webhook endpoint: ${URL}"
+echo "🌍 Environment: ${ENVIRONMENT}"
 echo ""
 
 # Test payload for REPLY message (has contextInfo.stanzaId)

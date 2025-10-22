@@ -4,9 +4,8 @@ import { getPrismaClient } from '../db/client';
 import { testSheetsConnection } from '../sheets/client';
 import { processWhatsAppMessage } from '../graph/simpleMessageProcessor';
 import { addMessageToDepositSheet } from '../lib/whatsappProcessor';
-import { createNewOrder, convertFirstMessageToOrderData } from '../sheets/operations';
-import { analyzeFirstMessage } from '../lib/messageAnalyzer';
-import { extractMessageText, extractSenderName } from '../lib/messageParser';
+import { createNewOrder } from '../sheets/operations';
+import { validateWebhookPayload } from '../lib/validation';
 
 const webhookRouter = Router();
 
@@ -102,31 +101,23 @@ webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
 // WhatsApp messages-upsert endpoint (Evolution API specific)
 webhookRouter.post('/whatsapp/messages-upsert', async (req, res): Promise<void> => {
   const requestId = req.headers['x-request-id'] as string;
-  
+
   try {
-    // Check if body parsing failed (malformed JSON)
-    if (req.body === undefined || req.body === null) {
-      logger.warn({ requestId }, 'Messages-upsert webhook received malformed JSON');
+    // Validate request body using existing validation method
+    try {
+      validateWebhookPayload(req.body);
+    } catch (error) {
+      const validationError = error instanceof Error ? error.message : 'Invalid request body';
+      logger.warn({ requestId, validationError }, 'Messages-upsert webhook received invalid request body');
       res.status(400).json({
         error: 'Bad Request',
-        message: 'Invalid JSON in request body',
+        message: validationError,
         requestId
       });
       return;
     }
 
     logger.info({ requestId, body: req.body }, 'WhatsApp messages-upsert webhook received');
-    
-    // Basic validation - check if body exists and has content
-    if (!req.body || Object.keys(req.body).length === 0) {
-      logger.warn({ requestId }, 'Messages-upsert webhook received empty body');
-      res.status(400).json({
-        error: 'Bad Request',
-        message: 'Empty request body',
-        requestId
-      });
-      return;
-    }
 
     // Log webhook to database
     try {

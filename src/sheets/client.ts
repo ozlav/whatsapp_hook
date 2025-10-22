@@ -176,6 +176,55 @@ export const createSheet = async (
 };
 
 /**
+ * Get sheet ID by sheet name
+ * @param sheetName - The name of the sheet tab (e.g., 'Deposite')
+ * @param sheetId - Optional spreadsheet ID, defaults to env.GOOGLE_SHEET_ID
+ * @returns The sheet ID (tab index) or null if not found
+ */
+export const getSheetIdByName = async (
+  sheetName: string,
+  sheetId?: string
+): Promise<number | null> => {
+  try {
+    const client = initializeSheetsClient();
+    const targetSheetId = sheetId || validateRequiredVar('GOOGLE_SHEET_ID', env.GOOGLE_SHEET_ID);
+
+    logger.info({ 
+      sheetName,
+      sheetId: targetSheetId.substring(0, 10) + '...'
+    }, 'Getting sheet ID by name');
+
+    const response = await client.spreadsheets.get({
+      spreadsheetId: targetSheetId,
+      fields: 'sheets.properties'
+    });
+
+    const sheets = response.data.sheets || [];
+    
+    for (const sheet of sheets) {
+      if (sheet.properties?.title === sheetName) {
+        const foundSheetId = sheet.properties.sheetId || 0;
+        logger.info({ 
+          sheetName, 
+          sheetId: foundSheetId 
+        }, 'Found sheet ID by name');
+        return foundSheetId;
+      }
+    }
+
+    logger.warn({ sheetName }, 'Sheet not found');
+    return null;
+  } catch (error) {
+    logger.error({ 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      sheetName,
+      sheetId: sheetId?.substring(0, 10) + '...'
+    }, 'Failed to get sheet ID by name');
+    return null;
+  }
+};
+
+/**
  * Test Google Sheets connection
  */
 export const testSheetsConnection = async (): Promise<boolean> => {

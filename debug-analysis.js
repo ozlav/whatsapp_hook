@@ -1,26 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env node
 
-# Test script to call the messages-upsert endpoint with a specific payload
-# Usage: ./test-webhook.sh [environment]
-# Environment options: local, production (default: production)
+/**
+ * Debug script to test message analysis
+ */
 
-ENVIRONMENT=${1:-production}
-
-if [ "$ENVIRONMENT" = "local" ]; then
-  HOST="localhost"
-  PORT="3000"
-  URL="http://${HOST}:${PORT}/webhook/whatsapp/messages-upsert"
-else
-  HOST="whatsapphook-production.up.railway.app"
-  URL="https://${HOST}/webhook/whatsapp/messages-upsert"
-fi
-
-echo "🚀 Testing webhook endpoint: ${URL}"
-echo "🌍 Environment: ${ENVIRONMENT}"
-echo ""
-
-# Test payload
-PAYLOAD='{
+const testPayload = {
   "event": "messages.upsert",
   "instance": "My Phone",
   "data": {
@@ -48,22 +32,45 @@ PAYLOAD='{
   "sender": "972542233372@s.whatsapp.net",
   "server_url": "https://evolution-api-production-0925.up.railway.app",
   "apikey": "58B5BE930282-49B3-947C-1C68049AFE5E"
-}'
+};
 
-echo "📦 Sending payload..."
-echo "👤 Sender: Oz Lavee"
-echo "🏠 Group: 120363418663151479@g.us"
-echo "📋 Message: Source: Master4 Air Duct Cleaning NY..."
-echo ""
+console.log('Testing message analysis...');
+console.log('Message text:', testPayload.data.message.conversation.substring(0, 100) + '...');
+console.log('Sender:', testPayload.data.pushName);
+console.log('Group:', testPayload.data.key.remoteJid);
 
-# Make the curl request
-curl -X POST "${URL}" \
-  -H "Content-Type: application/json" \
-  -H "x-request-id: test-$(date +%s)" \
-  -H "User-Agent: Test-Script/1.0" \
-  -d "${PAYLOAD}" \
-  -w "\n\n📊 Response Info:\nHTTP Code: %{http_code}\nTime: %{time_total}s\nSize: %{size_download} bytes\n" \
-  -s
+// Test the analysis endpoint
+const http = require('http');
 
-echo ""
-echo "✅ Test completed!"
+const postData = JSON.stringify({ message: testPayload });
+
+const options = {
+  hostname: 'localhost',
+  port: 3000,
+  path: '/graph/process',
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(postData)
+  }
+};
+
+const req = http.request(options, (res) => {
+  console.log(`\nResponse Status: ${res.statusCode}`);
+  
+  let responseData = '';
+  res.on('data', (chunk) => {
+    responseData += chunk;
+  });
+  
+  res.on('end', () => {
+    console.log('Response:', responseData);
+  });
+});
+
+req.on('error', (error) => {
+  console.error('Request failed:', error.message);
+});
+
+req.write(postData);
+req.end();

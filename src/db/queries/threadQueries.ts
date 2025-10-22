@@ -5,7 +5,6 @@
 
 import { logger } from '../../lib/logger';
 import { ThreadMessage } from '../../lib/messageParser';
-import { env } from '../../lib/env';
 
 /**
  * Test EvolutionAPI connection
@@ -59,8 +58,7 @@ export async function getThreadHistory(
 
 /**
  * Get thread history for a reply message
- * Since we can't access EvolutionAPI database directly, we'll use the quoted message
- * from the reply payload to reconstruct the thread context
+ * Uses the quoted message from the EvolutionAPI webhook payload to reconstruct thread context
  * @param replyMessageId - The reply message ID
  * @param targetGroupId - Target group ID to filter by
  * @param quotedMessage - The quoted message content from the reply payload
@@ -72,26 +70,42 @@ export async function getThreadHistoryForReply(
   quotedMessage?: any
 ): Promise<ThreadMessage[]> {
   try {
-    // Since we can't access EvolutionAPI database directly,
-    // we'll use the quoted message to reconstruct thread context
-    if (!quotedMessage || !quotedMessage.conversation) {
+    // Use the quoted message from EvolutionAPI webhook payload
+    if (!quotedMessage) {
       logger.warn('No quoted message available for thread reconstruction', { replyMessageId });
       return [];
     }
 
-    // Create a simple thread history from the quoted message
+    // Extract text from quoted message (handle different message types)
+    let quotedText = '';
+    if (quotedMessage.conversation) {
+      quotedText = quotedMessage.conversation;
+    } else if (quotedMessage.extendedTextMessage?.text) {
+      quotedText = quotedMessage.extendedTextMessage.text;
+    } else if (quotedMessage.imageMessage?.caption) {
+      quotedText = quotedMessage.imageMessage.caption;
+    }
+
+    if (!quotedText || quotedText.trim().length === 0) {
+      logger.warn('No text content in quoted message', { replyMessageId });
+      return [];
+    }
+
+    // Create thread history from the quoted message
     const threadHistory: ThreadMessage[] = [{
-      message_id: replyMessageId,
-      sender_name: 'Original Sender', // We don't have the original sender name
-      message_text: quotedMessage.conversation,
+      thread_base_id: replyMessageId,
+      current_message_id: replyMessageId,
+      sender_name: 'Previous Message', // We don't have the original sender name
+      message_text: quotedText.trim(),
       thread_depth: 0,
-      full_thread_history: quotedMessage.conversation
+      full_thread_history: quotedText.trim()
     }];
 
     logger.info('Reconstructed thread history from quoted message', { 
       replyMessageId, 
       targetGroupId,
-      threadLength: threadHistory.length 
+      threadLength: threadHistory.length,
+      quotedTextLength: quotedText.length
     });
     
     return threadHistory;

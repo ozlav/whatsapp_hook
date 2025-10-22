@@ -7,7 +7,6 @@ import { ChatOpenAI } from '@langchain/openai';
 import { logger } from './logger';
 import { env } from './env';
 import { loadSchema } from './schemaLoader';
-import { ThreadMessage } from './messageParser';
 
 // OpenAI client instance
 let openaiClient: ChatOpenAI | null = null;
@@ -26,6 +25,7 @@ const getOpenAIClient = (): ChatOpenAI => {
       modelName: 'gpt-4o-mini', // Use faster, cheaper model
       temperature: 0.1, // Low temperature for consistent extraction
       openAIApiKey: apiKey,
+      timeout: 30000, // 30 second timeout
       modelKwargs: {
         response_format: { type: "json_object" }
       }
@@ -58,22 +58,20 @@ export interface FirstMessageAnalysis {
  * Reply Analysis Result
  */
 export interface ReplyAnalysis {
-  hasWorkId: boolean;
-  workId?: string;
   changesDetected: boolean;
   changedFields: string[];
-  newValues?: Record<string, any>;
-  extractedData?: Record<string, any>;
+  columnUpdates?: Record<number, any>; // Maps column indices to new values
 }
 
 /**
- * Analyze first message to extract work order data
+ * Analyze message to extract work order data
  * Single LLM call that extracts all fields + relevance check
+ * Used for both first messages and quoted messages in replies
  * @param messageText - The message text to analyze
  * @param senderName - The sender's name
- * @returns First message analysis result
+ * @returns Message analysis result
  */
-export async function analyzeFirstMessage(
+export async function analyzeMessage(
   messageText: string,
   senderName: string
 ): Promise<FirstMessageAnalysis> {
@@ -149,7 +147,7 @@ Schema requirements: ${JSON.stringify(schema, null, 2)}`;
       analysis.relevant = false;
     }
     
-    logger.info('First message analysis completed', { 
+    logger.info('Message analysis completed', { 
       workId: analysis.work_id,
       relevant: analysis.relevant,
       hasAddress: !!analysis.address,
@@ -158,7 +156,7 @@ Schema requirements: ${JSON.stringify(schema, null, 2)}`;
     
     return analysis;
   } catch (error) {
-    logger.error('First message analysis failed', { 
+    logger.error('Message analysis failed', { 
       messageText: messageText.substring(0, 100),
       senderName,
       error: error instanceof Error ? error.message : 'Unknown error' 
@@ -176,73 +174,64 @@ Schema requirements: ${JSON.stringify(schema, null, 2)}`;
 }
 
 /**
- * Analyze reply message to detect work order changes
- * Single LLM call that checks work_id + detects changes
+ * Analyze reply message to detect work order changes based on current Google Sheets row data
  * @param messageText - The reply message text
  * @param senderName - The sender's name
- * @param threadHistory - Complete thread history
+ * @param workId - The work order ID
+ * @param headers - Google Sheets column headers
+ * @param rowData - Current row data from Google Sheets
  * @returns Reply analysis result
  */
 export async function analyzeReplyMessage(
   messageText: string,
   senderName: string,
-  threadHistory: ThreadMessage[]
+  workId: string,
+  headers: string[],
+  rowData: string[],
+  columnIndices: Record<string, number>
 ): Promise<ReplyAnalysis> {
   try {
     const client = getOpenAIClient();
     
-    // Build thread context
-    const threadContext = threadHistory
-      .map(msg => `${msg.sender_name}: ${msg.message_text}`)
-      .join(' | ');
+    // Create a mapping of headers to current values
+    const currentData: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      currentData[header] = rowData[index] || '';
+    });
     
-    const prompt = `You are analyzing a WhatsApp reply message in a thread to detect work order changes. Determine if this thread contains a work order and what specific fields changed in the latest reply.
+    const prompt = `Analyze this WhatsApp reply for work order updates.
 
-Thread History: ${threadContext}
+Current data:
+${headers.map((header, index) => `${index}:${header}=${rowData[index] || ''}`).join(' | ')}
 
-Latest Reply from ${senderName}: "${messageText}"
+Reply: "${messageText}"
 
-Analyze the thread and reply, then return ONLY a valid JSON object with:
-- hasWorkId: true if the thread contains a work order with work_id
-- workId: the work_id if found (string)
-- changesDetected: true if the latest reply contains changes to work order fields
-- changedFields: array of field names that changed (e.g., ["job_status", "total_price"])
-- newValues: object with new values for changed fields (optional)
-- extractedData: object with any work order data found in the thread (address, phone, customer_name, etc.)
+Return JSON with:
+- changesDetected: boolean
+- changedFields: array of field names
+- columnUpdates: {columnIndex: newValue}
 
-Work order fields to check for changes:
-- work_id, address, phone, customer_name
-- job_description, total_price, deposit
-- job_status, start_date_time, end_date_time
-- sort_of_payment, notes
+Rules:
+- "done"/"finished"/"completed" → job status = "done"
+- "cancelled"/"cancel" → job status = "cancelled" 
+- "refund" → job status = "refund"
 
-IMPORTANT:
-- Return ONLY valid JSON, no other text
-- Be conservative - only mark changes if you're confident
-- Look for explicit changes in the latest reply
-- Extract work order data from the thread history, not just the latest reply
-- If no work order found in thread, set hasWorkId to false
-- If no changes detected, set changesDetected to false and empty changedFields array
+Example: {"changesDetected":true,"changedFields":["job status","notes"],"columnUpdates":{"13":"done","12":"Job finished"}}`;
 
-Example response:
-{
-  "hasWorkId": true,
-  "workId": "WO-12345",
-  "changesDetected": true,
-  "changedFields": ["job_status", "notes"],
-  "newValues": {
-    "job_status": "completed",
-    "notes": "Job finished successfully"
-  },
-  "extractedData": {
-    "address": "123 Main St, City, State",
-    "phone": "(555) 123-4567",
-    "customer_name": "John Doe"
-  }
-}`;
-
+    logger.info('Sending prompt to OpenAI', { 
+      workId,
+      promptLength: prompt.length,
+      columnIndicesCount: Object.keys(columnIndices).length
+    });
+    
     const response = await client.invoke(prompt);
     const responseText = response.content as string;
+    
+    logger.info('Received response from OpenAI', { 
+      workId,
+      responseLength: responseText.length,
+      responsePreview: responseText.substring(0, 200)
+    });
     
     // Parse JSON response
     let analysis: ReplyAnalysis;
@@ -256,17 +245,16 @@ Example response:
       
       // Fallback: return minimal analysis
       analysis = {
-        hasWorkId: false,
         changesDetected: false,
         changedFields: []
       };
     }
     
     logger.info('Reply message analysis completed', { 
-      hasWorkId: analysis.hasWorkId,
-      workId: analysis.workId,
+      workId,
       changesDetected: analysis.changesDetected,
-      changedFields: analysis.changedFields
+      changedFields: analysis.changedFields,
+      columnUpdates: analysis.columnUpdates
     });
     
     return analysis;
@@ -274,13 +262,12 @@ Example response:
     logger.error('Reply message analysis failed', { 
       messageText: messageText.substring(0, 100),
       senderName,
-      threadLength: threadHistory.length,
+      workId,
       error: error instanceof Error ? error.message : 'Unknown error' 
     });
     
     // Return fallback analysis
     return {
-      hasWorkId: false,
       changesDetected: false,
       changedFields: []
     };
