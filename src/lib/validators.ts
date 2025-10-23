@@ -1,10 +1,10 @@
 /**
- * Validation utilities for WhatsApp webhook payloads
- * Provides comprehensive validation and error handling
+ * Consolidated Validation Functions
+ * All validation logic in one place for better maintainability
  */
 
 import { logger } from './logger';
-import { env, getTargetGroupId } from './env';
+import { getTargetGroupId } from './env';
 
 /**
  * Validation error types
@@ -24,7 +24,7 @@ export class WebhookValidationError extends ValidationError {
 }
 
 /**
- * WhatsApp webhook payload structure validation
+ * Validated webhook payload structure
  */
 export interface ValidatedWebhookPayload {
   data: {
@@ -123,12 +123,12 @@ export function validateWebhookPayload(payload: any): ValidatedWebhookPayload {
 }
 
 /**
- * Validate message text extraction
+ * Extract message text from validated webhook payload
  * @param payload - Validated webhook payload
  * @returns Extracted message text
  * @throws {ValidationError} When no text can be extracted
  */
-export function validateMessageText(payload: ValidatedWebhookPayload): string {
+export function extractMessageText(payload: ValidatedWebhookPayload): string {
   try {
     const message = payload.data.message;
     let text = '';
@@ -148,7 +148,7 @@ export function validateMessageText(payload: ValidatedWebhookPayload): string {
 
     return text.trim();
   } catch (error) {
-    logger.error('Message text validation failed', {
+    logger.error('Message text extraction failed', {
       error: error instanceof Error ? error.message : 'Unknown error',
       messageId: payload.data.key.id
     });
@@ -157,11 +157,11 @@ export function validateMessageText(payload: ValidatedWebhookPayload): string {
 }
 
 /**
- * Validate sender information
+ * Extract sender name from validated webhook payload
  * @param payload - Validated webhook payload
  * @returns Sender name
  */
-export function validateSenderName(payload: ValidatedWebhookPayload): string {
+export function extractSenderName(payload: ValidatedWebhookPayload): string {
   try {
     const senderName = payload.data.pushName || 'Unknown';
     
@@ -171,7 +171,7 @@ export function validateSenderName(payload: ValidatedWebhookPayload): string {
 
     return senderName.trim();
   } catch (error) {
-    logger.error('Sender name validation failed', {
+    logger.error('Sender name extraction failed', {
       error: error instanceof Error ? error.message : 'Unknown error',
       messageId: payload.data.key.id
     });
@@ -180,11 +180,11 @@ export function validateSenderName(payload: ValidatedWebhookPayload): string {
 }
 
 /**
- * Validate group ID filtering
+ * Check if message is from target group
  * @param remoteJid - The remote JID (group ID) to check
  * @returns true if message is from target group
  */
-export function validateTargetGroup(remoteJid: string): boolean {
+export function isFromTargetGroup(remoteJid: string): boolean {
   try {
     const targetGroupId = getTargetGroupId();
     const isFromTargetGroup = remoteJid === targetGroupId;
@@ -206,60 +206,11 @@ export function validateTargetGroup(remoteJid: string): boolean {
 }
 
 /**
- * Validate message relevance for processing
- * @param messageText - The message text to check
- * @returns true if message appears relevant for work order processing
- */
-export function validateMessageRelevance(messageText: string): boolean {
-  try {
-    if (!messageText || messageText.trim().length === 0) {
-      return false;
-    }
-
-    const text = messageText.toLowerCase();
-    
-    // Check for work order indicators
-    const workOrderIndicators = [
-      'work', 'job', 'order', 'service', 'repair', 'install',
-      'address', 'phone', 'customer', 'client', 'deposit', 'price',
-      'total', 'payment', 'status', 'complete', 'done', 'finished'
-    ];
-
-    const hasIndicators = workOrderIndicators.some(indicator => 
-      text.includes(indicator)
-    );
-
-    // Check for contact information patterns
-    const phonePattern = /(\+?1?[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}/;
-    const addressPattern = /\d+\s+[a-zA-Z\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|way|blvd|boulevard)/i;
-    
-    const hasContactInfo = phonePattern.test(text) || addressPattern.test(text);
-
-    const isRelevant = hasIndicators || hasContactInfo;
-
-    logger.debug('Message relevance validation', {
-      hasIndicators,
-      hasContactInfo,
-      isRelevant,
-      messageLength: messageText.length
-    });
-
-    return isRelevant;
-  } catch (error) {
-    logger.error('Message relevance validation failed', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      messageText: messageText.substring(0, 100)
-    });
-    return false;
-  }
-}
-
-/**
- * Validate work order data completeness
+ * Check if work order analysis has minimum required data
  * @param analysis - LLM analysis result
  * @returns true if analysis contains minimum required fields
  */
-export function validateWorkOrderCompleteness(analysis: any): boolean {
+export function hasMinimumWorkOrderData(analysis: any): boolean {
   try {
     // Check for minimum required fields
     const hasWorkId = analysis.work_id && analysis.work_id.trim().length > 0;
@@ -291,3 +242,58 @@ export function validateWorkOrderCompleteness(analysis: any): boolean {
   }
 }
 
+/**
+ * Check if a WhatsApp message is a reply
+ * @param payload - WhatsApp webhook payload
+ * @returns true if message is a reply
+ */
+export function isReplyMessage(payload: any): boolean {
+  try {
+    const data = payload.data || payload;
+    return !!(data.contextInfo?.stanzaId);
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Extract the quoted message ID from a reply
+ * @param payload - WhatsApp webhook payload
+ * @returns parent message ID or null
+ */
+export function extractQuotedMessageId(payload: any): string | null {
+  try {
+    const data = payload.data || payload;
+    return data.contextInfo?.stanzaId || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Extract message ID from WhatsApp payload
+ * @param payload - WhatsApp webhook payload
+ * @returns message ID or empty string
+ */
+export function extractMessageId(payload: any): string {
+  try {
+    const data = payload.data || payload;
+    return data.key?.id || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+/**
+ * Extract remote JID (group ID) from WhatsApp payload
+ * @param payload - WhatsApp webhook payload
+ * @returns remote JID or empty string
+ */
+export function extractRemoteJid(payload: any): string {
+  try {
+    const data = payload.data || payload;
+    return data.key?.remoteJid || '';
+  } catch (error) {
+    return '';
+  }
+}

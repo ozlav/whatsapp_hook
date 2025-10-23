@@ -39,13 +39,11 @@ const createMockFirstMessageAnalysis = (overrides: Partial<FirstMessageAnalysis>
 
 const createMockReplyAnalysis = (overrides: Partial<ReplyAnalysis> = {}): ReplyAnalysis => {
   const defaults: ReplyAnalysis = {
-    hasWorkId: true,
-    workId: 'WO-12345',
     changesDetected: true,
     changedFields: ['job_status', 'notes'],
-    newValues: {
-      job_status: 'completed',
-      notes: 'Job finished successfully'
+    columnUpdates: {
+      2: 'completed',
+      3: 'Job finished successfully'
     }
   };
   
@@ -141,8 +139,6 @@ describe('Google Sheets Operations', () => {
     describe('without changes detected', () => {
       it('should return only metadata when no new values provided', () => {
         const analysis: ReplyAnalysis = {
-          hasWorkId: true,
-          workId: 'WO-12345',
           changesDetected: false,
           changedFields: []
         };

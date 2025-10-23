@@ -5,7 +5,8 @@ import { testSheetsConnection } from '../sheets/client';
 import { processWhatsAppMessage } from '../graph/simpleMessageProcessor';
 import { addMessageToDepositSheet } from '../lib/whatsappProcessor';
 import { createNewOrder } from '../sheets/operations';
-import { validateWebhookPayload } from '../lib/validation';
+import { validateWebhookPayload } from '../lib/validators';
+import { WhatsAppWebhookPayload, ApiResponse } from '../types/webhook';
 
 const webhookRouter = Router();
 
@@ -21,7 +22,7 @@ webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
         error: 'Bad Request',
         message: 'Invalid JSON in request body',
         requestId
-      });
+      } as ApiResponse);
       return;
     }
 
@@ -34,7 +35,7 @@ webhookRouter.post('/whatsapp', async (req, res): Promise<void> => {
         error: 'Bad Request',
         message: 'Request body is required',
         requestId
-      });
+      } as ApiResponse);
       return;
     }
 
@@ -150,7 +151,7 @@ webhookRouter.post('/whatsapp/messages-upsert', async (req, res): Promise<void> 
       const messageId = req.body.data?.key?.id || 'unknown';
       
       // Process message with proper reply detection and flow
-      const result = await processWhatsAppMessage(req.body);
+      const result = await processWhatsAppMessage(req.body as WhatsAppWebhookPayload);
       
       if (result.success) {
         logger.info({ 

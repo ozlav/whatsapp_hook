@@ -103,3 +103,11 @@ export const validateEmail = (name: string, value: string | undefined): string =
   }
   return validated;
 };
+
+/**
+ * Get the target group ID for WhatsApp processing
+ * @returns The target group ID from environment or default fallback
+ */
+export const getTargetGroupId = (): string => {
+  return env.TARGET_GROUP_ID || '120363418663151479@g.us';
+};

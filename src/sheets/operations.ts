@@ -6,7 +6,7 @@
 import { appendToSheet, getSheetData, createSheet, initializeSheetsClient, getSheetIdByName } from './client';
 import { FirstMessageAnalysis, ReplyAnalysis } from '../lib/messageAnalyzer';
 import { logger } from '../lib/logger';
-import { env } from '../lib/env';
+import { env, getTargetGroupId } from '../lib/env';
 
 // Constants
 const SHEET_NAMES = {
@@ -524,7 +524,7 @@ function prepareOrderDataForSheet(orderData: OrderData, fullMessage?: string): s
     fullMessage || '', // Full message
     orderData.created_at, // Time sent
     orderData.created_by, // from
-    '120363418663151479@g.us', // group id (you can make this configurable)
+    getTargetGroupId(), // group id (uses centralized function)
     orderData.work_id, // Job ID
     orderData.customer_name, // customer name
     orderData.address, // address
