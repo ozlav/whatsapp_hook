@@ -4,7 +4,7 @@
  */
 
 import { logger } from './logger';
-import { env } from './env';
+import { getTargetGroupId } from './env';
 
 /**
  * Validation error types
@@ -186,7 +186,7 @@ export function validateSenderName(payload: ValidatedWebhookPayload): string {
  */
 export function validateTargetGroup(remoteJid: string): boolean {
   try {
-    const targetGroupId = env.TARGET_GROUP_ID || '120363418663151479@g.us';
+    const targetGroupId = getTargetGroupId();
     const isFromTargetGroup = remoteJid === targetGroupId;
     
     logger.debug('Group validation', {

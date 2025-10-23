@@ -8,7 +8,7 @@ import { analyzeMessage, analyzeReplyMessage, FirstMessageAnalysis, ReplyAnalysi
 import { isReplyMessage } from '../lib/messageParser';
 import { createNewOrder, convertFirstMessageToOrderData, getSheetRowByWorkId, updateSheetRowByIndices, appendUpdateLog, logMessage } from '../sheets/operations';
 import { logger } from '../lib/logger';
-import { env } from '../lib/env';
+import { getTargetGroupId } from '../lib/env';
 import { 
   validateMessageText, 
   validateSenderName, 
@@ -41,7 +41,7 @@ export async function processWhatsAppMessage(payload: any): Promise<{
       logger.info('Message not from target group, ignoring', { 
         messageId, 
         remoteJid,
-        targetGroup: env.TARGET_GROUP_ID || '120363418663151479@g.us'
+        targetGroup: getTargetGroupId()
       });
       return {
         success: true,
