@@ -25,7 +25,7 @@ PAYLOAD='{
   "instance": "My Phone",
   "data": {
     "key": {
-      "remoteJid": "120363418663151479@g.us",
+      "remoteJid": "120363420497664775@g.us",
       "fromMe": false,
       "id": "3BE214A91FDE9677D58F",
       "participant": "23781250756724@lid"
@@ -52,7 +52,7 @@ PAYLOAD='{
 
 echo "📦 Sending payload..."
 echo "👤 Sender: Oz Lavee"
-echo "🏠 Group: 120363418663151479@g.us"
+echo "🏠 Group: 120363420497664775@g.us"
 echo "📋 Message: Source: Master4 Air Duct Cleaning NY..."
 echo ""
 
