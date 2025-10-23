@@ -109,5 +109,5 @@ export const validateEmail = (name: string, value: string | undefined): string =
  * @returns The target group ID from environment or default fallback
  */
 export const getTargetGroupId = (): string => {
-  return env.TARGET_GROUP_ID || '120363418663151479@g.us';
+  return env.TARGET_GROUP_ID || '120363420497664775@g.us';
 };
