@@ -3,8 +3,7 @@
  * Tests for LLM-based message analysis
  */
 
-import { analyzeFirstMessage, analyzeReplyMessage, testOpenAIConnection } from '../src/lib/messageAnalyzer';
-import { ThreadMessage } from '../src/lib/messageParser';
+import { analyzeMessage, analyzeReplyMessage, testOpenAIConnection } from '../src/lib/messageAnalyzer';
 
 // Mock OpenAI to avoid API calls in tests
 jest.mock('@langchain/openai', () => ({
@@ -37,7 +36,7 @@ describe('Message Analyzer', () => {
       };
       mockOpenAI.mockImplementation(() => mockClient);
 
-      const result = await analyzeFirstMessage(
+      const result = await analyzeMessage(
         'Work order #WO-12345 for John Doe at 123 Main St, City, State. Phone: 555-123-4567. Plumbing repair needed, $500 total, $100 deposit.',
         'John Doe'
       );
@@ -62,7 +61,7 @@ describe('Message Analyzer', () => {
       };
       mockOpenAI.mockImplementation(() => mockClient);
 
-      const result = await analyzeFirstMessage(
+      const result = await analyzeMessage(
         'Just a regular message without work order info',
         'John Doe'
       );
@@ -79,7 +78,7 @@ describe('Message Analyzer', () => {
       };
       mockOpenAI.mockImplementation(() => mockClient);
 
-      const result = await analyzeFirstMessage(
+      const result = await analyzeMessage(
         'Some message',
         'John Doe'
       );
@@ -95,7 +94,7 @@ describe('Message Analyzer', () => {
       };
       mockOpenAI.mockImplementation(() => mockClient);
 
-      const result = await analyzeFirstMessage(
+      const result = await analyzeMessage(
         'Some message',
         'John Doe'
       );
@@ -106,24 +105,6 @@ describe('Message Analyzer', () => {
   });
 
   describe('analyzeReplyMessage', () => {
-    const mockThreadHistory: ThreadMessage[] = [
-      {
-        thread_base_id: 'base_123',
-        thread_depth: 0,
-        current_message_id: 'base_123',
-        sender_name: 'John Doe',
-        message_text: 'Work order #WO-12345 for plumbing repair, $500 total',
-        full_thread_history: 'John Doe : Work order #WO-12345 for plumbing repair, $500 total'
-      },
-      {
-        thread_base_id: 'base_123',
-        thread_depth: 1,
-        current_message_id: 'reply_456',
-        sender_name: 'Jane Smith',
-        message_text: 'Update: job is completed, status changed to done',
-        full_thread_history: 'John Doe : Work order #WO-12345 for plumbing repair, $500 total | Jane Smith : Update: job is completed, status changed to done'
-      }
-    ];
 
     it('should detect work order and changes in reply', async () => {
       const mockOpenAI = require('@langchain/openai').OpenAI;
@@ -143,11 +124,12 @@ describe('Message Analyzer', () => {
       const result = await analyzeReplyMessage(
         'Update: job is completed, status changed to done',
         'Jane Smith',
-        mockThreadHistory
+        'WO-12345',
+        ['work_id', 'customer_name', 'job_status', 'notes'],
+        ['WO-12345', 'John Doe', 'in_progress', ''],
+        { work_id: 0, customer_name: 1, job_status: 2, notes: 3 }
       );
 
-      expect(result.hasWorkId).toBe(true);
-      expect(result.workId).toBe('WO-12345');
       expect(result.changesDetected).toBe(true);
       expect(result.changedFields).toContain('job_status');
     });
@@ -167,10 +149,12 @@ describe('Message Analyzer', () => {
       const result = await analyzeReplyMessage(
         'Thanks for the update',
         'John Doe',
-        mockThreadHistory
+        'WO-12345',
+        ['work_id', 'customer_name', 'job_status', 'notes'],
+        ['WO-12345', 'John Doe', 'in_progress', ''],
+        { work_id: 0, customer_name: 1, job_status: 2, notes: 3 }
       );
 
-      expect(result.hasWorkId).toBe(true);
       expect(result.changesDetected).toBe(false);
       expect(result.changedFields).toHaveLength(0);
     });
@@ -189,10 +173,12 @@ describe('Message Analyzer', () => {
       const result = await analyzeReplyMessage(
         'Just a regular conversation',
         'John Doe',
-        mockThreadHistory
+        'WO-12345',
+        ['work_id', 'customer_name', 'job_status', 'notes'],
+        ['WO-12345', 'John Doe', 'in_progress', ''],
+        { work_id: 0, customer_name: 1, job_status: 2, notes: 3 }
       );
 
-      expect(result.hasWorkId).toBe(false);
       expect(result.changesDetected).toBe(false);
     });
 
@@ -206,10 +192,12 @@ describe('Message Analyzer', () => {
       const result = await analyzeReplyMessage(
         'Some reply',
         'John Doe',
-        mockThreadHistory
+        'WO-12345',
+        ['work_id', 'customer_name', 'job_status', 'notes'],
+        ['WO-12345', 'John Doe', 'in_progress', ''],
+        { work_id: 0, customer_name: 1, job_status: 2, notes: 3 }
       );
 
-      expect(result.hasWorkId).toBe(false);
       expect(result.changesDetected).toBe(false);
     });
 
@@ -223,10 +211,12 @@ describe('Message Analyzer', () => {
       const result = await analyzeReplyMessage(
         'Some reply',
         'John Doe',
-        mockThreadHistory
+        'WO-12345',
+        ['work_id', 'customer_name', 'job_status', 'notes'],
+        ['WO-12345', 'John Doe', 'in_progress', ''],
+        { work_id: 0, customer_name: 1, job_status: 2, notes: 3 }
       );
 
-      expect(result.hasWorkId).toBe(false);
       expect(result.changesDetected).toBe(false);
     });
   });

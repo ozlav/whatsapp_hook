@@ -5,8 +5,7 @@
 
 import { logger } from './logger';
 import { createNewOrder } from '../sheets/operations';
-import { extractMessageText, extractSenderName, isFromTargetGroup } from './messageParser';
-import { env } from './env';
+import { extractMessageText, extractSenderName, isFromTargetGroup } from './validators';
 
 /**
  * Simple function to add any message to deposit sheet as a basic log entry (FALLBACK)
@@ -16,14 +15,13 @@ import { env } from './env';
 export async function addMessageToDepositSheet(webhookData: any): Promise<boolean> {
   try {
     const messageData = webhookData.data;
-    const messageText = extractMessageText(messageData);
-    const senderName = extractSenderName(messageData);
+    const messageText = extractMessageText({ data: messageData });
+    const senderName = extractSenderName({ data: messageData });
     const remoteJid = messageData.key?.remoteJid;
     const timestamp = new Date().toISOString();
 
     // Check if message is from target group (same as processWhatsAppMessage)
-    const targetGroupId = env.TARGET_GROUP_ID || '120363418663151479@g.us'; // Use env var or fallback
-    const isFromGroup = isFromTargetGroup(remoteJid, targetGroupId);
+    const isFromGroup = isFromTargetGroup(remoteJid);
     
     if (!isFromGroup) {
       logger.info('Message not from target group, skipping basic log', { remoteJid });

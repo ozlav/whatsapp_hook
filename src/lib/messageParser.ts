@@ -3,6 +3,8 @@
  * Works with EvolutionAPI webhook payloads
  */
 
+import { getTargetGroupId } from './env';
+
 export interface WhatsAppMessage {
   key: {
     id: string;
@@ -139,9 +141,10 @@ export function extractRemoteJid(payload: any): string {
  * @param targetGroupId - Target group ID to filter by
  * @returns true if message is from target group
  */
-export function isFromTargetGroup(remoteJid: string, targetGroupId: string): boolean {
+export function isFromTargetGroup(remoteJid: string, targetGroupId?: string): boolean {
   try {
-    return remoteJid === targetGroupId;
+    const groupId = targetGroupId || getTargetGroupId();
+    return remoteJid === groupId;
   } catch (error) {
     return false;
   }
