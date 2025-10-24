@@ -6,7 +6,7 @@
 
 import { logMessage } from '../sheets/operations';
 import { logger } from '../lib/logger';
-import { getTargetGroupId } from '../lib/env';
+// import { getTargetGroupId } from '../lib/env'; // Removed unused import
 import { 
   validateWebhookPayload,
   extractMessageText, 
@@ -17,6 +17,7 @@ import {
 import { processFirstMessage } from '../lib/processors/firstMessageProcessor';
 import { processReplyMessage } from '../lib/processors/replyMessageProcessor';
 import { WhatsAppWebhookPayload, ProcessingResult } from '../types/webhook';
+import { handleErrorCase, handleNetworkError } from '../lib/errorHandling';
 
 
 /**
@@ -35,16 +36,11 @@ export async function processWhatsAppMessage(payload: WhatsAppWebhookPayload): P
 
     // Step 2: Check if message is from target group
     if (!isFromTargetGroup(remoteJid)) {
-      logger.info('Message not from target group, ignoring', { 
-        messageId, 
+      return handleErrorCase('ignored', {
+        messageId,
         remoteJid,
-        targetGroup: getTargetGroupId()
-      });
-      return {
-        success: true,
-        messageType: 'ignored',
-        error: 'Message not from target group'
-      };
+        customMessage: 'Message not from target group'
+      }, 'info');
     }
 
     // Step 3: Extract and validate message text
@@ -64,17 +60,9 @@ export async function processWhatsAppMessage(payload: WhatsAppWebhookPayload): P
     }
 
   } catch (error) {
-    logger.error('Message processing failed', {
-      operation: 'processWhatsAppMessage',
-      messageId: payload?.data?.key?.id || 'unknown',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-
-    return {
-      success: false,
-      messageType: 'ignored',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
+    return handleNetworkError(error, {
+      messageId: payload?.data?.key?.id || 'unknown'
+    }, 'Message processing');
   }
 }
 

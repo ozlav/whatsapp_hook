@@ -1,144 +1,102 @@
 /**
- * Error handling utilities for message processing
- * Provides robust error handling and recovery strategies
+ * Common Error Handling Utilities
+ * Provides centralized error handling for all message processors
  */
 
 import { logger } from './logger';
+import { ProcessingResult } from '../types/webhook';
 
-/**
- * Error types for message processing
- */
-export class MessageProcessingError extends Error {
-  constructor(message: string, public originalError?: Error, public context?: any) {
-    super(message);
-    this.name = 'MessageProcessingError';
-  }
-}
-
-export class LLMAnalysisError extends MessageProcessingError {
-  constructor(message: string, originalError?: Error, context?: any) {
-    super(message, originalError, context);
-    this.name = 'LLMAnalysisError';
-  }
-}
-
-export class SheetsOperationError extends MessageProcessingError {
-  constructor(message: string, originalError?: Error, context?: any) {
-    super(message, originalError, context);
-    this.name = 'SheetsOperationError';
-  }
-}
-
-/**
- * Processing result types
- */
-export interface ProcessingResult {
-  success: boolean;
-  messageType: 'first' | 'reply' | 'ignored';
+export interface ErrorContext {
+  messageId?: string;
+  workId?: string;
+  senderName?: string;
+  remoteJid?: string;
+  quotedMessageId?: string | undefined;
   analysis?: any;
-  error?: string;
-  fallbackUsed?: boolean;
+  customMessage?: string;
+  rowId?: string;
+  rowNumber?: number;
 }
 
-/**
- * Retry logic for transient failures
- * @param operation - The operation to retry
- * @param maxRetries - Maximum number of retries
- * @param delay - Delay between retries in milliseconds
- * @returns Promise with operation result
- */
-export async function retryOperation<T>(
-  operation: () => Promise<T>,
-  maxRetries: number = 3,
-  delay: number = 1000
-): Promise<T> {
-  let lastError: Error;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Unknown error');
-      
-      if (attempt === maxRetries) {
-        throw lastError;
-      }
-
-      logger.warn('Operation failed, retrying', {
-        attempt,
-        maxRetries,
-        error: lastError.message,
-        delay
-      });
-
-      await new Promise(resolve => setTimeout(resolve, delay * attempt));
-    }
-  }
-
-  throw lastError!;
-}
+export type ErrorType = 
+  | 'not_found' 
+  | 'missing_content' 
+  | 'invalid_data' 
+  | 'ignored' 
+  | 'network_error'
+  | 'validation_error';
 
 /**
- * Check if an error is retryable
- * @param error - The error to check
- * @returns true if the error is retryable
+ * Common error handler that can handle all error cases across processors
+ * @param errorType - Type of error to handle
+ * @param context - Context information for logging
+ * @param logLevel - Log level to use (default: 'warn')
+ * @returns Standardized ProcessingResult
  */
-export function isRetryableError(error: Error): boolean {
-  const retryablePatterns = [
-    /timeout/i,
-    /network/i,
-    /connection/i,
-    /rate limit/i,
-    /quota exceeded/i,
-    /service unavailable/i,
-    /internal server error/i,
-    /bad gateway/i,
-    /gateway timeout/i
-  ];
-
-  return retryablePatterns.some(pattern => pattern.test(error.message));
-}
-
-/**
- * Create a safe error message for external consumption
- * @param error - The error to sanitize
- * @returns Safe error message
- */
-export function sanitizeErrorMessage(error: Error): string {
-  // Remove sensitive information from error messages
-  let message = error.message;
+export function handleErrorCase(
+  errorType: ErrorType,
+  context: ErrorContext,
+  logLevel: 'warn' | 'info' | 'error' = 'warn'
+): ProcessingResult {
   
-  // Remove potential API keys or sensitive data
-  message = message.replace(/[A-Za-z0-9]{20,}/g, '[REDACTED]');
-  message = message.replace(/sk-[A-Za-z0-9]{20,}/g, '[REDACTED]');
-  message = message.replace(/AIza[0-9A-Za-z\\-_]{35}/g, '[REDACTED]');
-  
-  return message;
-}
-
-/**
- * Log error with context for debugging
- * @param error - The error to log
- * @param context - Additional context
- * @param level - Log level
- */
-export function logErrorWithContext(
-  error: Error,
-  context: any,
-  level: 'error' | 'warn' = 'error'
-): void {
-  const logData = {
-    error: error.message,
-    errorType: error.constructor.name,
-    stack: error.stack,
-    context
+  const errorMessages = {
+    not_found: 'Work order not found in Google Sheets',
+    missing_content: 'No quoted message content found in reply',
+    invalid_data: 'Invalid or empty data provided',
+    ignored: context.customMessage || 'Message ignored',
+    network_error: 'Network error occurred',
+    validation_error: 'Validation failed'
   };
 
-  if (level === 'warn') {
-    logger.warn('Error occurred', logData);
-  } else {
-    logger.error('Error occurred', logData);
-  }
+  const logData = {
+    messageId: context.messageId,
+    workId: context.workId,
+    senderName: context.senderName,
+    remoteJid: context.remoteJid,
+    quotedMessageId: context.quotedMessageId,
+    rowId: context.rowId,
+    rowNumber: context.rowNumber
+  };
+
+  // Remove undefined values
+  Object.keys(logData).forEach(key => {
+    const typedKey = key as keyof typeof logData;
+    if (logData[typedKey] === undefined) {
+      delete logData[typedKey];
+    }
+  });
+
+  logger[logLevel](errorMessages[errorType], logData);
+
+  return {
+    success: true,
+    messageType: 'ignored',
+    analysis: context.analysis,
+    error: errorMessages[errorType]
+  };
 }
 
+/**
+ * Handle network/API errors with retry logic
+ * @param error - The error that occurred
+ * @param context - Context information
+ * @param operation - Operation that failed
+ * @returns ProcessingResult
+ */
+export function handleNetworkError(
+  error: any,
+  context: ErrorContext,
+  operation: string
+): ProcessingResult {
+  logger.error(`${operation} failed`, {
+    ...context,
+    error: error instanceof Error ? error.message : 'Unknown error',
+    stack: error instanceof Error ? error.stack : undefined
+  });
 
+  return {
+    success: false,
+    messageType: 'ignored',
+    error: error instanceof Error ? error.message : 'Unknown error'
+  };
+}

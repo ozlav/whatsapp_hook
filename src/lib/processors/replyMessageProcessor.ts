@@ -8,6 +8,7 @@ import { getSheetRowByWorkId, updateSheetRowByIndices, appendUpdateLog } from '.
 import { logger } from '../logger';
 import { ValidatedWebhookPayload } from '../validators';
 import { ProcessingResult } from '../../types/webhook';
+import { handleErrorCase, handleNetworkError } from '../errorHandling';
 
 /**
  * Process a reply message (update existing work order)
@@ -48,17 +49,11 @@ export async function processReplyMessage(
     }
 
     if (!quotedMessageText || quotedMessageText.trim().length === 0) {
-      logger.warn('No quoted message content found in reply', { 
-        messageId, 
+      return handleErrorCase('missing_content', {
+        messageId,
         quotedMessageId,
-        hasQuotedMessage: !!(payload.data.contextInfo as any)?.quotedMessage
+        customMessage: 'No quoted message content found in reply'
       });
-      
-      return {
-        success: true,
-        messageType: 'ignored',
-        error: 'No quoted message content found in reply'
-      };
     }
 
     logger.info('Found quoted message content', { 
@@ -72,17 +67,11 @@ export async function processReplyMessage(
 
     // Step 3: Check if analysis contains a work_id
     if (!analysis.work_id || analysis.work_id.trim() === '') {
-      logger.info('No work_id found in quoted message analysis', { 
+      return handleErrorCase('missing_content', {
         messageId,
-        quotedText: quotedMessageText.substring(0, 100) + '...'
-      });
-      
-      return {
-        success: true,
-        messageType: 'ignored',
         analysis,
-        error: 'No work_id found in quoted message analysis'
-      };
+        customMessage: 'No work_id found in quoted message analysis'
+      }, 'info');
     }
 
     logger.info('Found work_id in quoted message', { 
@@ -94,17 +83,11 @@ export async function processReplyMessage(
     const sheetData = await getSheetRowByWorkId(analysis.work_id);
     
     if (!sheetData) {
-      logger.warn('Work order not found in Google Sheets', { 
-        messageId, 
-        workId: analysis.work_id 
+      return handleErrorCase('not_found', {
+        messageId,
+        workId: analysis.work_id,
+        analysis
       });
-      
-      return {
-        success: true,
-        messageType: 'ignored',
-        analysis,
-        error: 'Work order not found in Google Sheets'
-      };
     }
 
     logger.info('Found existing work order with full data', { 
@@ -131,8 +114,9 @@ export async function processReplyMessage(
     const notesColumnIndex = sheetData.columnIndices['notes'];
     if (notesColumnIndex !== undefined) {
       const prevNotes = sheetData.rowData[notesColumnIndex] ?? '';
-      const separator = prevNotes ? '\n' : '';
-      columnUpdates[notesColumnIndex] = `${prevNotes}${separator}${messageText}`;
+      const separator = prevNotes ? '\n\n' : '';
+      const formattedReply = `${senderName}: ${messageText}`;
+      columnUpdates[notesColumnIndex] = `${prevNotes}${separator}${formattedReply}`;
     }
     
     // Add any column updates from reply analysis
@@ -189,17 +173,8 @@ export async function processReplyMessage(
     };
 
   } catch (error) {
-    logger.error('Reply message processing failed', {
-      operation: 'processReplyMessage',
-      messageId: payload.data.key.id,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
-    });
-
-    return {
-      success: false,
-      messageType: 'ignored',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
+    return handleNetworkError(error, {
+      messageId: payload.data.key.id
+    }, 'Reply message processing');
   }
 }
