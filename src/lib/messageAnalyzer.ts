@@ -7,6 +7,8 @@ import { ChatOpenAI } from '@langchain/openai';
 import { logger } from './logger';
 import { env } from './env';
 import { loadSchema } from './schemaLoader';
+import { getPromptByType } from './prompts/promptService';
+import { getSchemaByConfigId } from './schema/schemaService';
 
 // OpenAI client instance
 let openaiClient: ChatOpenAI | null = null;
@@ -69,17 +71,35 @@ export interface ReplyAnalysis {
  * Used for both first messages and quoted messages in replies
  * @param messageText - The message text to analyze
  * @param senderName - The sender's name
+ * @param configId - Optional configuration ID for dynamic prompts/schemas
  * @returns Message analysis result
  */
 export async function analyzeMessage(
   messageText: string,
-  senderName: string
+  senderName: string,
+  configId?: string
 ): Promise<FirstMessageAnalysis> {
   try {
     const client = getOpenAIClient();
-    const schema = await loadSchema();
     
-    const prompt = `You are analyzing a WhatsApp message for work order information. Extract all relevant fields and determine if this message contains enough information to be considered a work order.
+    // Use dynamic schema if config provided, otherwise fallback to static
+    const schema = configId 
+      ? await getSchemaByConfigId(configId)
+      : await loadSchema();
+    
+    const schemaDefinition = schema?.definition || await loadSchema();
+    
+    // Try to load dynamic prompt from configuration
+    let customPrompt: string | null = null;
+    if (configId) {
+      const promptObj = await getPromptByType(configId, 'first_message');
+      if (promptObj) {
+        customPrompt = promptObj.template;
+      }
+    }
+    
+    // Use custom prompt if available, otherwise use default
+    const basePrompt = customPrompt || `You are analyzing a WhatsApp message for work order information. Extract all relevant fields and determine if this message contains enough information to be considered a work order.
 
 Message from ${senderName}: "${messageText}"
 
@@ -106,7 +126,11 @@ IMPORTANT:
 - If work_id, address, or phone are missing, set relevant to false
 - Be conservative - only mark as relevant if you're confident about the minimum fields
 
-Schema requirements: ${JSON.stringify(schema, null, 2)}`;
+Schema requirements: ${JSON.stringify(schemaDefinition, null, 2)}`;
+
+    const prompt = customPrompt 
+      ? `${customPrompt}\n\nSchema requirements: ${JSON.stringify(schemaDefinition, null, 2)}`
+      : basePrompt;
 
     const response = await client.invoke(prompt);
     const responseText = response.content as string;
