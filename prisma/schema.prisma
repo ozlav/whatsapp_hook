@@ -54,3 +54,57 @@ model Message {
   @@map("Message")
   @@schema("public")
 }
+
+// Configuration - stores message processing configurations
+model Configuration {
+  id            String   @id @default(cuid())
+  name          String   // Human-readable name
+  enabled       Boolean  @default(true)
+  groupIds      String[] // Array of WhatsApp group IDs to listen to
+  processorClass String   // Class name of processor to use
+  spreadsheetId String   // Google Sheets ID
+  mainSheetName String   // Name of main data sheet
+  logSheetName  String   // Name of log sheet
+  auditSheetName String   // Name of audit sheet
+  columnMapping Json     // Column index mappings (JSONB)
+  metadata      Json?    // Additional metadata (JSONB)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  prompts       Prompt[]
+  schema        Schema?
+
+  @@map("configurations")
+  @@schema("public")
+}
+
+// Prompt - stores LLM prompts for configurations
+model Prompt {
+  id             String   @id @default(cuid())
+  configurationId String
+  name           String   // Prompt name (e.g., "first_message", "reply_analysis")
+  type           String   // Prompt type
+  template       String   // Prompt template with variables
+  systemPrompt   String?  // Optional system prompt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  configuration  Configuration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+
+  @@map("prompts")
+  @@schema("public")
+}
+
+// Schema - stores JSON schemas for configurations
+model Schema {
+  id             String   @id @default(cuid())
+  configurationId String  @unique
+  definition     Json     // JSON Schema definition
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  configuration  Configuration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+
+  @@map("schemas")
+  @@schema("public")
+}

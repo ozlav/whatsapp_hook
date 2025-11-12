@@ -2,11 +2,18 @@ import express from 'express';
 import { healthRouter } from './routes/health';
 import { webhookRouter } from './routes/webhook';
 import { graphRouter } from './routes/graph';
+import { configRouter } from './routes/config';
 import { logger } from './lib/logger';
 import { env } from './lib/env';
 import { testDatabaseConnection, disconnectDatabase } from './db/client';
+import { ProcessorFactory } from './lib/processors/factory/ProcessorFactory';
+import { WorkOrderProcessor } from './lib/processors/implementations/WorkOrderProcessor';
 
 // Environment variables are loaded in env.ts
+
+// Register processors
+ProcessorFactory.register('WorkOrderProcessor', new WorkOrderProcessor());
+logger.info({ processors: ProcessorFactory.listProcessors() }, 'Registered processors');
 
 // Log startup information
 logger.info('Starting WhatsApp webhook server...', {
@@ -53,6 +60,7 @@ app.use((req, _res, next) => {
 app.use('/health', healthRouter);
 app.use('/webhook', webhookRouter);
 app.use('/graph', graphRouter);
+app.use('/config', configRouter);
 
 // Root endpoint
 app.get('/', (_req, res) => {
